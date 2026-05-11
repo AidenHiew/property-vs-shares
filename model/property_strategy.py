@@ -98,6 +98,10 @@ def simulate_property_trial(inputs: PropertyInputs) -> PropertyResult:
     """Simulate one trial of the property strategy."""
     h = inputs.horizon_years
     initial_loan = inputs.purchase_price - inputs.deposit
+    assert h <= inputs.loan_term_years, (
+        f"horizon_years ({h}) must be <= loan_term_years ({inputs.loan_term_years}); "
+        "v1 doesn't model holding past full loan amortisation"
+    )
 
     # Property value path: end-of-year values after applying capital growth each year.
     # value_path[0] = purchase_price * (1 + g[0])  (end of year 1)
