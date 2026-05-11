@@ -155,3 +155,16 @@ m1.metric("Median property wealth", f"${result['median_property_wealth']:,.0f}")
 m2.metric("Median shares wealth", f"${result['median_shares_wealth']:,.0f}")
 m3.metric("Worst-year cash needed", f"${result['worst_year_cash']:,.0f}")
 m4.metric("P(strategy stays solvent)", f"{result['p_solvent']:.0%}")
+
+st.subheader("Terminal wealth distribution")
+fig = go.Figure()
+fig.add_trace(go.Histogram(
+    x=result["property_terminal_wealth"], name="Property",
+    opacity=0.6, nbinsx=50,
+))
+fig.add_trace(go.Histogram(
+    x=result["shares_terminal_wealth"], name="Shares",
+    opacity=0.6, nbinsx=50,
+))
+fig.update_layout(barmode="overlay", xaxis_title="Terminal wealth ($)", yaxis_title="Trials")
+st.plotly_chart(fig, use_container_width=True)
