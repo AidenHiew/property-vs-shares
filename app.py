@@ -168,3 +168,20 @@ fig.add_trace(go.Histogram(
 ))
 fig.update_layout(barmode="overlay", xaxis_title="Terminal wealth ($)", yaxis_title="Trials")
 st.plotly_chart(fig, use_container_width=True)
+
+st.subheader("Cashflow stress")
+years = np.arange(1, horizon + 1)
+median_cashflow = np.median(result["outside_cash_per_trial_year"], axis=0)
+p90_cashflow = np.percentile(result["outside_cash_per_trial_year"], 90, axis=0)
+p10_cashflow = np.percentile(result["outside_cash_per_trial_year"], 10, axis=0)
+
+fig2 = go.Figure()
+fig2.add_trace(go.Scatter(x=years, y=median_cashflow, mode="lines", name="Median"))
+fig2.add_trace(go.Scatter(x=years, y=p90_cashflow, mode="lines", name="90th %ile (worst)",
+                          line=dict(dash="dot")))
+fig2.add_trace(go.Scatter(x=years, y=p10_cashflow, mode="lines", name="10th %ile (best)",
+                          line=dict(dash="dot")))
+fig2.add_hline(y=max_top_up, line_dash="dash", line_color="red",
+               annotation_text=f"Your serviceability ceiling: ${max_top_up:,}")
+fig2.update_layout(xaxis_title="Year", yaxis_title="Annual out-of-pocket cash ($)")
+st.plotly_chart(fig2, use_container_width=True)
