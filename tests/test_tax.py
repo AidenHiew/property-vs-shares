@@ -90,3 +90,38 @@ def test_unfranked_dividend_taxed_at_mtr():
     # $700 unfranked dividend at MTR 30% → no credit, no gross-up.
     # Tax = $700 * 30% = $210. Net (positive = owed) = $210.
     assert franking_credit_refund(700, mtr=0.30, franked_portion=0.0) == pytest.approx(210)
+
+
+from model.tax import cgt_payable
+
+
+def test_cgt_zero_gain():
+    assert cgt_payable(gain=0, holding_years=5, mtr=0.30) == 0
+
+
+def test_cgt_loss():
+    # Capital loss → no CGT (loss can offset other gains, but not modelled here)
+    assert cgt_payable(gain=-50_000, holding_years=5, mtr=0.30) == 0
+
+
+def test_cgt_short_term_no_discount():
+    # < 12 months → no discount
+    # $100k gain at MTR 37% = $37,000
+    assert cgt_payable(gain=100_000, holding_years=0.5, mtr=0.37) == pytest.approx(37_000)
+
+
+def test_cgt_long_term_50pc_discount():
+    # > 12 months → 50% discount
+    # $200k gain, discounted to $100k, taxed at 37% = $37,000
+    assert cgt_payable(gain=200_000, holding_years=5, mtr=0.37) == pytest.approx(37_000)
+
+
+def test_cgt_at_top_marginal_rate():
+    # $500k gain, discounted to $250k, taxed at 45% = $112,500
+    assert cgt_payable(gain=500_000, holding_years=10, mtr=0.45) == pytest.approx(112_500)
+
+
+def test_cgt_at_exactly_12_months_no_discount():
+    """Boundary: exactly 12 months held does NOT qualify for 50% discount."""
+    # $100k gain at MTR 37%, no discount = $37,000
+    assert cgt_payable(gain=100_000, holding_years=1.0, mtr=0.37) == pytest.approx(37_000)

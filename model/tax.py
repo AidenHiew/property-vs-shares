@@ -50,3 +50,19 @@ def franking_credit_refund(cash_dividend: float, mtr: float, franked_portion: fl
 
     tax_before_credit = grossed_up * mtr
     return tax_before_credit - franking_credit
+
+
+CGT_DISCOUNT = 0.50
+DISCOUNT_HOLDING_THRESHOLD_YEARS = 1.0
+
+
+def cgt_payable(gain: float, holding_years: float, mtr: float) -> float:
+    """CGT on a capital gain. AU resident, 50% discount if held > 12 months.
+
+    Returns 0 for capital losses (offsetting against other gains is out of v1 scope).
+    """
+    if gain <= 0:
+        return 0.0
+    if holding_years > DISCOUNT_HOLDING_THRESHOLD_YEARS:
+        gain = gain * (1 - CGT_DISCOUNT)
+    return gain * mtr
