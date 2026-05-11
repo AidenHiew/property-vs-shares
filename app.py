@@ -6,7 +6,6 @@ import plotly.graph_objects as go
 from model.monte_carlo import run_monte_carlo
 from model.tax import sa_stamp_duty
 from model.normalisation import PORTFOLIO_PROFILES
-from model.inflation import deflate
 
 st.set_page_config(page_title="Property vs Shares", layout="wide")
 
@@ -144,6 +143,7 @@ result = cached_run(
     margin_loan_rate=margin_loan_rate, isolate_asset_quality=isolate_asset_quality,
     correlation=correlation,
     mtr=mtr, cpi=cpi, drp=True,
+    serviceability_ceiling=max_top_up,
     seed=42,
 )
 
