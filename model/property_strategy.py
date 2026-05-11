@@ -54,6 +54,7 @@ class PropertyResult:
     selling_costs: float
     terminal_after_tax_wealth: float
     overflow_share_terminal_value: float
+    outside_cash_required_per_year: np.ndarray  # = max(0, -cashflow); used by shares strategy
 
 
 def _annual_loan_balance_and_interest(
@@ -183,6 +184,10 @@ def simulate_property_trial(inputs: PropertyInputs) -> PropertyResult:
         gross_sale_price - selling_costs - terminal_loan_balance - cgt_paid
     )
 
+    outside_cash_required_per_year = np.where(
+        cashflow_per_year < 0, -cashflow_per_year, 0
+    )
+
     return PropertyResult(
         cashflow_per_year=cashflow_per_year,
         cumulative_div43_claimed=cumulative_div43,
@@ -192,4 +197,5 @@ def simulate_property_trial(inputs: PropertyInputs) -> PropertyResult:
         selling_costs=selling_costs,
         terminal_after_tax_wealth=terminal_after_tax_wealth,
         overflow_share_terminal_value=overflow_share_terminal_value,
+        outside_cash_required_per_year=outside_cash_required_per_year,
     )

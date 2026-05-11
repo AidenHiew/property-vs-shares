@@ -105,6 +105,18 @@ def test_property_positive_cashflow_invests_in_shares():
     assert result.overflow_share_terminal_value > 0
 
 
+def test_property_exposes_outside_cash_required_per_year():
+    """Property must expose per-year outside cash needed (= max(0, -cashflow))
+    so the shares strategy can mirror it as external_contributions for equal
+    outside-cash symmetry (see design spec §7).
+    """
+    inputs = make_default_inputs()
+    result = simulate_property_trial(inputs)
+
+    expected = np.where(result.cashflow_per_year < 0, -result.cashflow_per_year, 0)
+    np.testing.assert_array_almost_equal(result.outside_cash_required_per_year, expected)
+
+
 def test_property_negatively_geared_overflow_is_zero():
     """When every year produces negative cashflow, the overflow share bucket
     must remain at zero — nothing was ever contributed.
