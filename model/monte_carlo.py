@@ -44,6 +44,7 @@ from model.normalisation import (
     build_shares_inputs_for_mode_b,
     PORTFOLIO_PROFILES,
 )
+from model.solvency import flag_forced_sales
 
 
 def run_monte_carlo(
@@ -80,6 +81,7 @@ def run_monte_carlo(
     mtr: float,
     cpi: float,
     drp: bool,
+    serviceability_ceiling: float = 20_000,
     seed: int = 42,
 ):
     """Run the full Monte Carlo simulation. Returns aggregated outputs."""
@@ -151,6 +153,8 @@ def run_monte_carlo(
         s_terminal[t] = s_result.terminal_after_tax_wealth
         p_outside_cash[t] = p_result.outside_cash_required_per_year
 
+    forced_flags = flag_forced_sales(p_outside_cash, serviceability_ceiling)
+
     return {
         "property_terminal_wealth": p_terminal,
         "shares_terminal_wealth": s_terminal,
@@ -160,4 +164,6 @@ def run_monte_carlo(
         "worst_year_cash": float(np.percentile(p_outside_cash.max(axis=1), 90)),
         "median_property_wealth": float(np.median(p_terminal)),
         "median_shares_wealth": float(np.median(s_terminal)),
+        "p_solvent": float(1 - forced_flags.mean()),
+        "forced_sale_flags": forced_flags,
     }
