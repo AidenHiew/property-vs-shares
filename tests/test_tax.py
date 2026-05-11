@@ -83,3 +83,10 @@ def test_partial_franking():
     # half unfranked ($350 cash, no credit, taxed at MTR).
     # Total tax @ 30% = (500 + 350) * 30% - 150 credit = 255 - 150 = 105.
     assert franking_credit_refund(700, mtr=0.30, franked_portion=0.50) == pytest.approx(105)
+
+
+def test_unfranked_dividend_taxed_at_mtr():
+    """Purely unfranked dividend: no credit, full MTR applies to cash dividend."""
+    # $700 unfranked dividend at MTR 30% → no credit, no gross-up.
+    # Tax = $700 * 30% = $210. Net (positive = owed) = $210.
+    assert franking_credit_refund(700, mtr=0.30, franked_portion=0.0) == pytest.approx(210)
