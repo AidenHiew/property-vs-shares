@@ -185,3 +185,17 @@ fig2.add_hline(y=max_top_up, line_dash="dash", line_color="red",
                annotation_text=f"Your serviceability ceiling: ${max_top_up:,}")
 fig2.update_layout(xaxis_title="Year", yaxis_title="Annual out-of-pocket cash ($)")
 st.plotly_chart(fig2, use_container_width=True)
+
+with st.expander("Assumptions used in this run", expanded=False):
+    st.markdown(f"""
+- **Tax:** SA, MTR {mtr:.0%}, FY2026 Stage 3 brackets
+- **Negative gearing:** current FY2026 rules ⚠ law potentially changing in Budget 2026-27
+- **Property:** {property_age.replace('_', ' ').title()}, {asset_type.title()}
+- **Portfolio profile:** {portfolio_profile.replace('_', ' ').title()} (μ {PORTFOLIO_PROFILES[portfolio_profile]['return_mu']:.1%}, σ {PORTFOLIO_PROFILES[portfolio_profile]['return_sigma']:.1%}, {PORTFOLIO_PROFILES[portfolio_profile]['franked']:.0%} franked)
+- **Correlation (property ↔ shares):** {correlation:.2f}
+- **Monte Carlo:** 5,000 trials, fixed seed (reproducible)
+- **CPI:** {cpi:.1%} applied to rent and holding costs annually
+- **Buy-and-hold share portfolio** — no mid-period rebalancing CGT events
+- **Disclaimer:** Normal distributions; does not predict severe market crashes (fat-tail events)
+- **Counterfactual mode (if Mode B isolated):** assumes margin loan at mortgage rate — not real-world available
+""")
