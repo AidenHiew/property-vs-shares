@@ -100,4 +100,58 @@ with col_display:
     display_mode = st.radio("Display", ["nominal", "today"], horizontal=True,
                             format_func=lambda x: {"nominal": "Nominal", "today": "Today's $"}[x])
 
-st.write("Tool initialised. Charts and metrics arrive in subsequent tasks.")
+# Compute stamp duty + buying costs from inputs
+stamp_duty = sa_stamp_duty(purchase_price)
+buying_costs = 2_600  # conveyancing + inspection + loan app
+
+st.markdown(f"**Upfront cash deployed:** ${deposit + stamp_duty + buying_costs:,.0f} "
+            f"(${deposit:,.0f} deposit + ${stamp_duty:,.0f} stamp duty + ${buying_costs:,.0f} buying costs)")
+
+# Symmetric reinvestment banner
+st.warning(
+    "⚠ Both strategies deploy the same total capital each year. When property needs $X to "
+    "feed negative gearing, shares invests the same $X. (Equal outside-cash contributions — ON.)"
+)
+
+# Margin call warning if Mode B
+if mode == "fair_fight":
+    st.error(
+        "Mode B does not model margin-call risk. In a 30%+ share crash, your margin lender "
+        "may force a sale at the bottom — this risk is real and is not captured below."
+    )
+
+# Run Monte Carlo (cached)
+@st.cache_data(show_spinner="Running 5,000 Monte Carlo trials...")
+def cached_run(**kwargs):
+    return run_monte_carlo(**kwargs)
+
+result = cached_run(
+    trials=5000, horizon_years=horizon,
+    purchase_price=purchase_price, deposit=deposit,
+    stamp_duty=stamp_duty, buying_costs=buying_costs,
+    loan_rate_mu=loan_rate, loan_rate_sigma=loan_rate_sigma,
+    gross_yield=gross_yield,
+    vacancy_weeks_mu=vacancy_weeks, vacancy_weeks_sigma=vacancy_weeks_sigma,
+    rental_yield_sigma=rental_yield_sigma,
+    property_growth_mu=property_growth_mu, property_growth_sigma=property_growth_sigma,
+    share_return_mu=share_return_mu, share_return_sigma=share_return_sigma,
+    management_fee_pct=management_fee_pct, maintenance_pct=maintenance_pct,
+    property_age=property_age, asset_type=asset_type,
+    depreciation_override=depreciation_override,
+    portfolio_profile=portfolio_profile,
+    mode=mode,
+    margin_loan_rate=margin_loan_rate, isolate_asset_quality=isolate_asset_quality,
+    correlation=correlation,
+    mtr=mtr, cpi=cpi, drp=True,
+    seed=42,
+)
+
+# Headline
+st.header(f"Property beats shares in **{result['p_property_wins']:.0%}** of 5,000 simulated futures over {horizon} years.")
+
+# Supporting metrics
+m1, m2, m3, m4 = st.columns(4)
+m1.metric("Median property wealth", f"${result['median_property_wealth']:,.0f}")
+m2.metric("Median shares wealth", f"${result['median_shares_wealth']:,.0f}")
+m3.metric("Worst-year cash needed", f"${result['worst_year_cash']:,.0f}")
+m4.metric("P(strategy stays solvent)", f"{result['p_solvent']:.0%}")
