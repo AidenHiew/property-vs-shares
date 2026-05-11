@@ -156,3 +156,37 @@ def test_stamp_duty_at_band_boundary_500k():
     # Exactly at $500k boundary: $11,330 base + ($500k - $300k) * 5.0% = $21,330; + $181 fee
     # (price <= upper, so $500k uses the $300k-$500k band's 5.0% rate)
     assert sa_stamp_duty(500_000) == pytest.approx(21_511, abs=1)
+
+
+from model.tax import sa_land_tax
+
+
+# Expected values derived from SA_LAND_TAX_BANDS encoded in tax.py.
+# Verify against RevenueSA before relying on production:
+# https://revenuesa.sa.gov.au/landtax/rates-and-thresholds
+def test_land_tax_zero():
+    assert sa_land_tax(0) == 0
+
+
+def test_land_tax_below_threshold():
+    assert sa_land_tax(500_000) == 0
+
+
+def test_land_tax_at_threshold_boundary():
+    # $833k uses the 0% band (<= boundary semantics)
+    assert sa_land_tax(833_000) == 0
+
+
+def test_land_tax_900k_in_first_taxable_band():
+    # ($900k - $833k) * 0.5% = $335
+    assert sa_land_tax(900_000) == pytest.approx(335, abs=1)
+
+
+def test_land_tax_1_5m_in_middle_band():
+    # $1,895 + ($1.5m - $1.212m) * 1.0% = $1,895 + $2,880 = $4,775
+    assert sa_land_tax(1_500_000) == pytest.approx(4_775, abs=1)
+
+
+def test_land_tax_2m_in_top_band():
+    # $7,335 + ($2m - $1.756m) * 2.4% = $7,335 + $5,856 = $13,191
+    assert sa_land_tax(2_000_000) == pytest.approx(13_191, abs=1)

@@ -96,3 +96,27 @@ def sa_stamp_duty(price: float) -> float:
             return duty + SA_TRANSFER_FEE
         prev_upper = upper
     return 0.0  # unreachable
+
+
+# SA land tax bands: (upper_bound, base_tax_at_lower_bound, marginal_rate_above_lower_bound)
+# FY2026 SA general (investor) thresholds — placeholder; verify against RevenueSA in production:
+# https://revenuesa.sa.gov.au/landtax/rates-and-thresholds
+SA_LAND_TAX_BANDS = [
+    (833_000,        0,       0.0000),
+    (1_212_000,      0,       0.0050),
+    (1_756_000,  1_895,       0.0100),
+    (float("inf"), 7_335,     0.0240),
+]
+
+
+def sa_land_tax(unimproved_land_value: float) -> float:
+    """Annual SA land tax on an investor-held property's unimproved land value."""
+    if unimproved_land_value <= 0:
+        return 0.0
+
+    prev_upper = 0
+    for upper, base, rate in SA_LAND_TAX_BANDS:
+        if unimproved_land_value <= upper:
+            return base + (unimproved_land_value - prev_upper) * rate
+        prev_upper = upper
+    return 0.0
