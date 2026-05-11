@@ -49,18 +49,21 @@ def test_shares_year_one_cashflow_with_drp():
 def test_shares_terminal_wealth_compounds():
     """No dividends, just price growth at 8.5%/yr for 25 yrs with MER drag.
 
-    MER (0.20%) is deducted from NAV each year by the fund manager, so
-    the effective net-of-MER growth factor is 1.085 * (1 - 0.002) per year.
+    The simulator subtracts MER × start-of-year NAV each year (additive on the
+    start balance), so the effective per-year compound factor is approximately
+    1 + 0.085 - 0.002 = 1.083. We approximate this here with the close-enough
+    multiplicative form 1.085 * (1 - 0.002) ≈ 1.08283 — the two forms differ by
+    ~0.4% over 25 years, comfortably inside the rel=0.02 tolerance.
     gross_terminal_value = value before CGT but after MER drag.
 
-    Expected: $172k * (1.085 * (1 - 0.002))^25 ≈ $1.26m
-    (vs. $1.32m without MER — a ~$65k drag over 25 years)
+    Expected: ~$172k × 1.083^25 ≈ $1.28m
+    (vs. $1.32m without MER — a ~$40-65k drag over 25 years)
     """
     inputs = make_default_shares_inputs()
     inputs.dividend_yield_pct = 0.0
     inputs.franked_portion = 0.0
     result = simulate_shares_trial(inputs)
 
-    # Net-of-MER compound factor: capital appreciation minus fund expense each year
+    # Net-of-MER compound factor (approximate; see docstring for exact behaviour).
     expected_pre_cgt = 172_000 * (1.085 * (1 - inputs.mer)) ** 25
     assert result.gross_terminal_value == pytest.approx(expected_pre_cgt, rel=0.02)
