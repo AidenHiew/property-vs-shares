@@ -49,3 +49,37 @@ def test_marginal_tax_custom_brackets():
     """Verify the brackets= parameter is actually plumbed through."""
     simple = [(10_000, 0.0), (float("inf"), 0.50)]
     assert marginal_tax(15_000, brackets=simple) == pytest.approx(2_500)
+
+
+from model.tax import franking_credit_refund
+
+
+def test_franking_zero_dividend():
+    assert franking_credit_refund(0, mtr=0.30, franked_portion=1.0) == 0
+
+
+def test_fully_franked_at_30pc_mtr_breakeven():
+    # Company tax 30%; if MTR == 30%, franking offsets tax exactly.
+    # $700 dividend (cash), franking credit = $700 * 30/70 = $300, gross-up = $1000.
+    # Tax on $1000 @ 30% = $300; minus credit $300 = $0 net tax.
+    # So refund = -tax_payable = 0.
+    assert franking_credit_refund(700, mtr=0.30, franked_portion=1.0) == pytest.approx(0)
+
+
+def test_fully_franked_at_19pc_mtr_refund():
+    # Company tax 30%; MTR 19% → user gets cash refund of difference.
+    # $700 dividend, gross-up to $1000, tax @ 19% = $190; minus $300 credit = -$110 (refund).
+    assert franking_credit_refund(700, mtr=0.19, franked_portion=1.0) == pytest.approx(-110)
+
+
+def test_fully_franked_at_45pc_mtr_top_up():
+    # MTR 45% → user owes more tax.
+    # $700 dividend, gross-up to $1000, tax @ 45% = $450; minus $300 credit = $150 owed.
+    assert franking_credit_refund(700, mtr=0.45, franked_portion=1.0) == pytest.approx(150)
+
+
+def test_partial_franking():
+    # 50% franked $700: half franked ($350 cash + $150 credit = $500 grossed),
+    # half unfranked ($350 cash, no credit, taxed at MTR).
+    # Total tax @ 30% = (500 + 350) * 30% - 150 credit = 255 - 150 = 105.
+    assert franking_credit_refund(700, mtr=0.30, franked_portion=0.50) == pytest.approx(105)
