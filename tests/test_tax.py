@@ -125,3 +125,34 @@ def test_cgt_at_exactly_12_months_no_discount():
     """Boundary: exactly 12 months held does NOT qualify for 50% discount."""
     # $100k gain at MTR 37%, no discount = $37,000
     assert cgt_payable(gain=100_000, holding_years=1.0, mtr=0.37) == pytest.approx(37_000)
+
+
+from model.tax import sa_stamp_duty
+
+
+# Expected values computed from the SA_DUTY_BANDS encoded in tax.py.
+# Verify against the official RevenueSA calculator before relying:
+# https://www.revenuesa.sa.gov.au/stamp-duty/transfer-of-property
+def test_stamp_duty_zero_price():
+    assert sa_stamp_duty(0) == 0
+
+
+def test_stamp_duty_400k():
+    # Band walk: $11,330 base at $300k + ($400k - $300k) * 5.0% = $16,330; + $181 fee
+    assert sa_stamp_duty(400_000) == pytest.approx(16_511, abs=1)
+
+
+def test_stamp_duty_700k():
+    # Band walk: $21,330 base at $500k + ($700k - $500k) * 5.5% = $32,330; + $181 fee
+    assert sa_stamp_duty(700_000) == pytest.approx(32_511, abs=1)
+
+
+def test_stamp_duty_1_2m():
+    # Band walk: $21,330 base at $500k + ($1,200k - $500k) * 5.5% = $59,830; + $181 fee
+    assert sa_stamp_duty(1_200_000) == pytest.approx(60_011, abs=1)
+
+
+def test_stamp_duty_at_band_boundary_500k():
+    # Exactly at $500k boundary: $11,330 base + ($500k - $300k) * 5.0% = $21,330; + $181 fee
+    # (price <= upper, so $500k uses the $300k-$500k band's 5.0% rate)
+    assert sa_stamp_duty(500_000) == pytest.approx(21_511, abs=1)

@@ -66,3 +66,33 @@ def cgt_payable(gain: float, holding_years: float, mtr: float) -> float:
     if holding_years > DISCOUNT_HOLDING_THRESHOLD_YEARS:
         gain = gain * (1 - CGT_DISCOUNT)
     return gain * mtr
+
+
+# SA conveyance duty bands: (upper_bound, base_duty_at_lower_bound, marginal_rate_above_lower_bound)
+# Source: RevenueSA — https://www.revenuesa.sa.gov.au/stamp-duty/transfer-of-property
+SA_DUTY_BANDS = [
+    (12_000,        0,       0.0100),
+    (30_000,      120,       0.0200),
+    (50_000,      480,       0.0300),
+    (100_000,   1_080,       0.0350),
+    (200_000,   2_830,       0.0400),
+    (250_000,   6_830,       0.0425),
+    (300_000,   8_955,       0.0475),
+    (500_000,  11_330,       0.0500),
+    (float("inf"), 21_330,   0.0550),
+]
+SA_TRANSFER_FEE = 181
+
+
+def sa_stamp_duty(price: float) -> float:
+    """SA conveyance stamp duty + transfer fee on an investment property purchase."""
+    if price <= 0:
+        return 0.0
+
+    prev_upper = 0
+    for upper, base, rate in SA_DUTY_BANDS:
+        if price <= upper:
+            duty = base + (price - prev_upper) * rate
+            return duty + SA_TRANSFER_FEE
+        prev_upper = upper
+    return 0.0  # unreachable
