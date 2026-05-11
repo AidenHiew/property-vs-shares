@@ -6,6 +6,7 @@ import plotly.graph_objects as go
 from model.monte_carlo import run_monte_carlo
 from model.tax import sa_stamp_duty
 from model.normalisation import PORTFOLIO_PROFILES
+from model.inflation import deflate
 
 st.set_page_config(page_title="Property vs Shares", layout="wide")
 
@@ -145,6 +146,21 @@ result = cached_run(
     mtr=mtr, cpi=cpi, drp=True,
     seed=42,
 )
+
+if display_mode == "today":
+    # Deflate terminal values to today's purchasing power.
+    # Note: mutating the returned dict in-place is safe here because st.cache_data returns
+    # a copy of the cached value (Streamlit deep-copies on cache hit), so we don't corrupt
+    # the cache. If behaviour changes, switch to result_display = dict(result) below.
+    deflator = (1 + cpi) ** horizon
+    result["property_terminal_wealth"] = result["property_terminal_wealth"] / deflator
+    result["shares_terminal_wealth"] = result["shares_terminal_wealth"] / deflator
+    result["median_property_wealth"] = result["median_property_wealth"] / deflator
+    result["median_shares_wealth"] = result["median_shares_wealth"] / deflator
+    # Outside cash is per-year; deflate each year by its own deflator
+    yearly_deflator = (1 + cpi) ** np.arange(1, horizon + 1)
+    result["outside_cash_per_trial_year"] = result["outside_cash_per_trial_year"] / yearly_deflator
+    result["worst_year_cash"] = result["worst_year_cash"] / deflator  # rough; use horizon's deflator
 
 # Headline
 st.header(f"Property beats shares in **{result['p_property_wins']:.0%}** of 5,000 simulated futures over {horizon} years.")
