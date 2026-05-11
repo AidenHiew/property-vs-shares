@@ -190,3 +190,49 @@ def test_land_tax_1_5m_in_middle_band():
 def test_land_tax_2m_in_top_band():
     # $7,335 + ($2m - $1.756m) * 2.4% = $7,335 + $5,856 = $13,191
     assert sa_land_tax(2_000_000) == pytest.approx(13_191, abs=1)
+
+
+from model.tax import depreciation_for_year
+
+
+def test_depreciation_new_build_house():
+    # New build, $700k house → building cost = $280k.
+    # Div 43: $280k * 2.5% = $7,000/yr.
+    # Div 40 not modelled in detail in v1; defer to override or zero.
+    assert depreciation_for_year(
+        property_age="new_build",
+        building_cost=280_000,
+    ) == pytest.approx(7_000)
+
+
+def test_depreciation_established_post_2017_blocked_div40():
+    # Established post-2017: Div 40 BLOCKED, only Div 43.
+    # $700k house, building $280k → Div 43 = $7,000/yr.
+    assert depreciation_for_year(
+        property_age="established_post_2017",
+        building_cost=280_000,
+    ) == pytest.approx(7_000)
+
+
+def test_depreciation_established_pre_2017_grandfathered():
+    # Pre-2017: Div 40 grandfathered. v1 still uses flat Div 43; user can override.
+    assert depreciation_for_year(
+        property_age="established_pre_2017",
+        building_cost=280_000,
+    ) == pytest.approx(7_000)
+
+
+def test_depreciation_user_override_takes_precedence():
+    # Power user sets a custom annual figure
+    assert depreciation_for_year(
+        property_age="established_post_2017",
+        building_cost=280_000,
+        override=10_000,
+    ) == 10_000
+
+
+def test_depreciation_zero_building_cost_returns_zero():
+    assert depreciation_for_year(
+        property_age="new_build",
+        building_cost=0,
+    ) == 0

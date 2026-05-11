@@ -120,3 +120,29 @@ def sa_land_tax(unimproved_land_value: float) -> float:
             return base + (unimproved_land_value - prev_upper) * rate
         prev_upper = upper
     return 0.0
+
+
+from typing import Optional
+from config import DIV_43_RATE
+
+
+def depreciation_for_year(
+    property_age: str,
+    building_cost: float,
+    override: Optional[float] = None,
+) -> float:
+    """Annual depreciation deduction for an investment property.
+
+    v1 simplification: returns Div 43 (capital works @ 2.5% of building cost) for all property
+    ages. Div 40 (plant & equipment) is not modelled in detail — for new builds this would
+    add ~$2-3k/yr in early years declining over effective life; user can override.
+
+    Established post-May-2017 properties have Div 40 BLOCKED by the legislative change; only
+    Div 43 applies. v1 conservatively applies the same Div-43-only rule across all ages and
+    relies on the override for power values with a quantity surveyor schedule.
+    """
+    if override is not None:
+        return float(override)
+    if building_cost <= 0:
+        return 0.0
+    return building_cost * DIV_43_RATE

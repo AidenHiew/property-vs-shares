@@ -17,3 +17,21 @@ SEED = 42
 
 # CPI default
 DEFAULT_CPI = 0.025
+
+from typing import Literal
+
+PropertyAge = Literal["new_build", "established_post_2017", "established_pre_2017"]
+AssetType = Literal["house", "apartment", "townhouse"]
+
+# Building cost as % of purchase price, by asset type.
+BUILDING_COST_PCT = {
+    "house": 0.40,
+    "apartment": 0.85,
+    "townhouse": 0.65,
+}
+
+# Land value as % of purchase price (inverse of building cost).
+LAND_VALUE_PCT = {k: 1 - v for k, v in BUILDING_COST_PCT.items()}
+
+# Div 43 rate (capital works deduction)
+DIV_43_RATE = 0.025  # 2.5% per year of original construction cost
