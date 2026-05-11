@@ -4,6 +4,15 @@ Personal-use Monte Carlo simulator comparing AU residential investment property 
 
 See full design spec at `../2026-05-11-property-vs-shares-design-v2.md`.
 
+## Status
+
+**v1 shipped 2026-05-11.** All 27 planned tasks complete, 66/66 tests passing, end-to-end smoke
+validated (default scenario: P(property wins) ≈ 76%, median property $2.11M vs shares $1.14M,
+worst-year cash $15.9k, P(solvent) 99.7%).
+
+Outstanding follow-ups before using this for a *second* real allocation decision are tracked in
+[`BACKLOG.md`](./BACKLOG.md) — start there when picking the project up again.
+
 ## Run
 
 ```bash

@@ -4,6 +4,24 @@ Items surfaced by the final holistic code review (2026-05-11) that were not
 critical for shipping v1 but should be addressed before the model is used for
 a real allocation decision a second time.
 
+## Pickup notes (when resuming)
+
+Quick orientation for the next session:
+
+1. **Run the app to remind yourself what it does:** `source .venv/bin/activate && streamlit run app.py`
+2. **Check tests still green:** `pytest -q` (should be 66 passed)
+3. **Suggested order for v1.1 work** (cheapest correctness wins first):
+   1. Stamp duty + buying costs in CGT cost base (Bugs §1) — small, tested-in-isolation, slightly
+      raises `p_property_wins` so worth knowing before any decision
+   2. Dual same-seed RNG (Bugs §2) — one-line fix, removes a latent defect
+   3. `rental_yield_sigma` slider (Bugs §3) — decide: plumb it through or hide it. Hiding is faster.
+   4. `p_solvent` dedup (Polish §1) — trivial cleanup
+   5. `worst_year_cash` exact deflation (Polish §2) — only if the rough number ever feels wrong
+4. **Larger v1.1 features** (margin-call modelling, capex shocks, offset account, Federal Budget
+   2026-27 negative-gearing toggle) are bigger commitments — brainstorm scope before plunging in.
+
+Last commit on `main`: `309d618 fix(app): wire max_top_up to serviceability_ceiling; drop unused import`
+
 ## Bugs / correctness
 
 - **Stamp duty + buying costs missing from property CGT cost base.** `model/property_strategy.py`
