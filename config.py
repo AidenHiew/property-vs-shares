@@ -35,3 +35,10 @@ LAND_VALUE_PCT = {k: 1 - v for k, v in BUILDING_COST_PCT.items()}
 
 # Div 43 rate (capital works deduction)
 DIV_43_RATE = 0.025  # 2.5% per year of original construction cost
+
+# Constant share return assumption for v1 "overflow" buckets.
+# Used by the property strategy to compound positive cashflow into a parallel
+# share portfolio (see model/property_strategy.py). Kept simple and constant
+# (not stochastic) because the overflow position is small relative to the main
+# property; the actual shares strategy module uses full Monte Carlo.
+SHARE_RETURN_FOR_OVERFLOW = 0.085

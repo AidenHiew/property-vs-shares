@@ -91,12 +91,35 @@ def test_property_io_to_pi_transition_at_year_5():
 
 def test_property_positive_cashflow_invests_in_shares():
     """If property generates surplus in some years, that surplus is invested in
-    shares within the property strategy (the 'overflow wealth' bucket)."""
+    shares within the property strategy (the 'overflow wealth' bucket).
+
+    At 8% gross yield against a 6% loan rate, the property is positively geared
+    in every year, so the overflow bucket must end up strictly positive.
+    """
     inputs = make_default_inputs()
-    inputs.gross_yield = 0.08  # high yield → positively geared
+    inputs.gross_yield = 0.08  # high yield → positively geared every year
     result = simulate_property_trial(inputs)
 
-    # In a positively geared scenario, overflow_share_value should be > 0 at terminal
-    assert hasattr(result, "overflow_share_terminal_value")
-    if (result.cashflow_per_year > 0).any():
-        assert result.overflow_share_terminal_value > 0
+    # Sanity check: every year really is positive cashflow under these inputs.
+    assert (result.cashflow_per_year > 0).all()
+    assert result.overflow_share_terminal_value > 0
+
+
+def test_property_negatively_geared_overflow_is_zero():
+    """When every year produces negative cashflow, the overflow share bucket
+    must remain at zero — nothing was ever contributed.
+
+    Uses a 5-year IO-only horizon with a 3% gross yield against 6% loan rate.
+    Over 5 IO years, rent growth (tracking ~5.5% capital appreciation) never
+    outpaces the interest burden, so cashflow stays negative throughout.
+    """
+    inputs = make_default_inputs()
+    inputs.gross_yield = 0.03       # low yield → deep negative gearing
+    inputs.horizon_years = 5        # stay within IO period so no amortisation drag change
+    inputs.loan_rate_path = np.full(5, 0.06)
+    inputs.vacancy_weeks_path = np.full(5, 2.0)
+    inputs.capital_growth_path = np.full(5, 0.055)
+    result = simulate_property_trial(inputs)
+
+    assert (result.cashflow_per_year < 0).all()
+    assert result.overflow_share_terminal_value == 0.0

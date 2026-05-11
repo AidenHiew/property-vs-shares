@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from typing import Optional
 import numpy as np
 
-from config import BUILDING_COST_PCT, LAND_VALUE_PCT
+from config import BUILDING_COST_PCT, LAND_VALUE_PCT, SHARE_RETURN_FOR_OVERFLOW
 from model.tax import sa_land_tax, depreciation_for_year, cgt_payable
 from model.inflation import inflate_series
 
@@ -158,7 +158,6 @@ def simulate_property_trial(inputs: PropertyInputs) -> PropertyResult:
     # Overflow share portfolio: any positive year's cashflow is invested in shares.
     # Use a constant share return for v1 (overflow is small; full Monte Carlo treatment
     # lives on the shares strategy module). 8.5% pre-tax, no dividend tax drag (v1 simplification).
-    SHARE_RETURN_FOR_OVERFLOW = 0.085
     overflow_balance = 0.0
     for year in range(h):
         overflow_balance *= (1 + SHARE_RETURN_FOR_OVERFLOW)
