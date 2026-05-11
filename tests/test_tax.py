@@ -43,3 +43,9 @@ def test_marginal_tax_250k():
 def test_marginal_tax_negative_income_returns_zero():
     # Negative gearing scenarios — losses don't refund prior tax in this fn
     assert marginal_tax(-5_000) == 0
+
+
+def test_marginal_tax_custom_brackets():
+    """Verify the brackets= parameter is actually plumbed through."""
+    simple = [(10_000, 0.0), (float("inf"), 0.50)]
+    assert marginal_tax(15_000, brackets=simple) == pytest.approx(2_500)
