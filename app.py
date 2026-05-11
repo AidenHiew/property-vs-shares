@@ -61,6 +61,36 @@ with st.sidebar:
         help="Used to flag scenarios where property cashflow exceeds your serviceability."
     )
 
+    with st.expander("Advanced", expanded=False):
+        st.subheader("Volatility (σ) overrides")
+        property_growth_sigma = st.slider("Property growth σ", 0.05, 0.20, 0.11, step=0.01)
+        share_return_sigma = st.slider("Share return σ", 0.05, 0.30, 0.15, step=0.01)
+        loan_rate_sigma = st.slider("Loan rate σ (pp)", 0.5, 2.0, 1.0, step=0.1) / 100
+        rental_yield_sigma = st.slider("Rental yield σ (pp)", 0.1, 1.0, 0.5, step=0.1) / 100
+        vacancy_weeks_sigma = st.slider("Vacancy σ (weeks)", 0.5, 4.0, 1.0, step=0.5)
+        property_growth_mu = st.slider("Property growth μ", 0.0, 0.10, 0.055, step=0.005)
+        share_return_mu = st.slider("Share return μ", 0.0, 0.15, 0.085, step=0.005)
+
+        st.subheader("Correlation")
+        corr_quick = st.radio("Quick-pick", [-0.1, 0.3, 0.6], index=1, horizontal=True,
+                              format_func=lambda x: f"{x:.1f}")
+        correlation = st.slider("Property–shares correlation", -1.0, 1.0, corr_quick, step=0.05)
+
+        st.subheader("Mode B — counterfactual")
+        margin_loan_rate = st.slider("Margin loan rate", 0.05, 0.12, 0.075, step=0.005)
+        isolate_asset_quality = st.checkbox(
+            "Isolate asset quality (pin shares loan rate to mortgage rate)",
+            value=False,
+            help="Counterfactual — retail investors cannot borrow against shares on mortgage terms."
+        )
+
+        st.subheader("Other")
+        cpi = st.slider("CPI", 0.0, 0.05, 0.025, step=0.005)
+        depreciation_override = st.number_input("Depreciation override (annual)", value=0, step=500)
+        depreciation_override = depreciation_override if depreciation_override > 0 else None
+        management_fee_pct = st.slider("Management fee %", 0.0, 0.12, 0.07, step=0.005)
+        maintenance_pct = st.slider("Maintenance + insurance + rates % of value/yr", 0.005, 0.030, 0.012, step=0.001)
+
 # --------------- Main pane: comparison radio + display toggle ---------------
 col_mode, col_display = st.columns([2, 1])
 with col_mode:
