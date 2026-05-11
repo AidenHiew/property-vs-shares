@@ -53,6 +53,7 @@ class PropertyResult:
     cgt_paid_on_sale: float
     selling_costs: float
     terminal_after_tax_wealth: float
+    overflow_share_terminal_value: float
 
 
 def _annual_loan_balance_and_interest(
@@ -154,6 +155,19 @@ def simulate_property_trial(inputs: PropertyInputs) -> PropertyResult:
     tax_on_property = taxable_income * inputs.mtr  # negative for losses (= refund)
     cashflow_per_year = pre_tax_cash - tax_on_property
 
+    # Overflow share portfolio: any positive year's cashflow is invested in shares.
+    # Use a constant share return for v1 (overflow is small; full Monte Carlo treatment
+    # lives on the shares strategy module). 8.5% pre-tax, no dividend tax drag (v1 simplification).
+    SHARE_RETURN_FOR_OVERFLOW = 0.085
+    overflow_balance = 0.0
+    for year in range(h):
+        overflow_balance *= (1 + SHARE_RETURN_FOR_OVERFLOW)
+        if cashflow_per_year[year] > 0:
+            overflow_balance += cashflow_per_year[year]
+            # Note: future years' cashflow array is not affected — we just track the parallel bucket.
+
+    overflow_share_terminal_value = overflow_balance
+
     # Terminal sale event (end of horizon, year h-1).
     gross_sale_price = value_path[-1]
     selling_costs = gross_sale_price * inputs.selling_costs_pct
@@ -178,4 +192,5 @@ def simulate_property_trial(inputs: PropertyInputs) -> PropertyResult:
         cgt_paid_on_sale=cgt_paid,
         selling_costs=selling_costs,
         terminal_after_tax_wealth=terminal_after_tax_wealth,
+        overflow_share_terminal_value=overflow_share_terminal_value,
     )

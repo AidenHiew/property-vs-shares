@@ -87,3 +87,16 @@ def test_property_io_to_pi_transition_at_year_5():
     # (since IO+P&I over 25 years on a 30-year term reduces but doesn't fully retire the loan).
     assert result.terminal_loan_balance < 560_000  # some amortisation happened
     assert result.terminal_loan_balance > 0        # not fully paid off (25 < 30 yr term)
+
+
+def test_property_positive_cashflow_invests_in_shares():
+    """If property generates surplus in some years, that surplus is invested in
+    shares within the property strategy (the 'overflow wealth' bucket)."""
+    inputs = make_default_inputs()
+    inputs.gross_yield = 0.08  # high yield → positively geared
+    result = simulate_property_trial(inputs)
+
+    # In a positively geared scenario, overflow_share_value should be > 0 at terminal
+    assert hasattr(result, "overflow_share_terminal_value")
+    if (result.cashflow_per_year > 0).any():
+        assert result.overflow_share_terminal_value > 0
