@@ -41,6 +41,16 @@ class PropertyInputs:
     cpi: float
     horizon_years: int
     selling_costs_pct: float
+    # --- Federal Budget 2026-27 regime ---
+    # "current": status quo (full NG + 50% CGT discount).
+    # "restricted_2027": NG losses quarantined to residential property income/gains from
+    # commencement; CGT splits at commencement (current rules pre-, indexed + 30%-min rate
+    # post-). See docs/2026-05-16-budget-2026-27-design.md.
+    property_regime: str = "current"
+    # End of model year (this index) = commencement boundary. Default 1 = year 1 is
+    # pre-commencement (FY2027, current rules); year 2+ is post-commencement (FY2028+,
+    # restricted rules). Matches a May-2026 today-purchase.
+    restricted_ng_start_year_index: int = 1
 
 
 @dataclass
@@ -55,6 +65,11 @@ class PropertyResult:
     terminal_after_tax_wealth: float
     overflow_share_terminal_value: float
     outside_cash_required_per_year: np.ndarray  # = max(0, -cashflow); used by shares strategy
+    # --- Restricted regime traceability (zero under "current" regime) ---
+    terminal_loss_pool_offset: float = 0.0           # pool $ used against post-commencement gain
+    commencement_value: float = 0.0                  # property value at end of pre-commencement period
+    pre_commencement_taxable_gain: float = 0.0       # nominal gain × 50% discount (pre-commencement)
+    post_commencement_indexed_gain: float = 0.0      # indexed gain after pool offset
 
 
 def _annual_loan_balance_and_interest(
