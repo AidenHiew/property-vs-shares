@@ -177,3 +177,37 @@ def test_property_restricted_regime_pre_commencement_period():
     # Year 2 onward — restricted; no refund, so cashflow strictly worse than current
     current_result = simulate_property_trial(make_default_inputs())
     assert result.cashflow_per_year[1] < current_result.cashflow_per_year[1]
+
+
+def test_property_restricted_regime_pool_offsets_future_surplus():
+    """Pool from a year-1 loss reduces taxable income in a later surplus year,
+    so the surplus year pays less tax than under the current regime (where the
+    year-1 refund was already banked).
+
+    Construct a 3-year scenario:
+      - Year 1: deep loss (3% yield vs 6% IO) → loss into pool
+      - Years 2-3: artificially low loan rate → rental surplus
+    Year 2's cashflow under restricted should be >= year 2 under current
+    (because the pool fully offsets the surplus before MTR is applied).
+    """
+    inputs = make_default_inputs()
+    inputs.horizon_years = 3
+    inputs.loan_rate_path = np.array([0.06, 0.001, 0.001])
+    inputs.vacancy_weeks_path = np.full(3, 2.0)
+    inputs.capital_growth_path = np.full(3, 0.055)
+    inputs.gross_yield = 0.03
+    inputs.property_regime = "restricted_2027"
+    inputs.restricted_ng_start_year_index = 0
+    result = simulate_property_trial(inputs)
+
+    current_inputs = make_default_inputs()
+    current_inputs.horizon_years = 3
+    current_inputs.loan_rate_path = np.array([0.06, 0.001, 0.001])
+    current_inputs.vacancy_weeks_path = np.full(3, 2.0)
+    current_inputs.capital_growth_path = np.full(3, 0.055)
+    current_inputs.gross_yield = 0.03
+    current_result = simulate_property_trial(current_inputs)
+
+    assert result.cashflow_per_year[0] < 0
+    # Year 2 surplus: pool absorbs taxable income → cashflow >= current regime
+    assert result.cashflow_per_year[1] >= current_result.cashflow_per_year[1]
