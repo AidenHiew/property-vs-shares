@@ -168,7 +168,34 @@ def simulate_property_trial(inputs: PropertyInputs) -> PropertyResult:
     pre_tax_cash = rent_path - cash_costs_path
     # Taxable income from property: includes depreciation as a (non-cash) deduction.
     taxable_income = rent_path - cash_costs_path - depreciation_path
-    tax_on_property = taxable_income * inputs.mtr  # negative for losses (= refund)
+
+    # Tax on property income — branches on regime.
+    # Under "current": rental losses generate a refund against other income at MTR
+    # (negative gearing). Under "restricted_2027" from the start year onwards, losses
+    # are quarantined to a residential property loss pool — no refund. The pool is
+    # consumed by future rental surpluses (offsetting taxable income before MTR is
+    # applied) and any remainder offsets the post-commencement capital gain at sale.
+    residential_property_loss_pool = 0.0
+    tax_on_property = np.zeros(h)
+    for year in range(h):
+        ti = taxable_income[year]
+        is_restricted = (
+            inputs.property_regime == "restricted_2027"
+            and year >= inputs.restricted_ng_start_year_index
+        )
+        if not is_restricted:
+            tax_on_property[year] = ti * inputs.mtr  # negative = refund
+        else:
+            if ti >= 0:
+                # Rental surplus — pool absorbs first, MTR on remainder
+                offset = min(ti, residential_property_loss_pool)
+                residential_property_loss_pool -= offset
+                tax_on_property[year] = (ti - offset) * inputs.mtr
+            else:
+                # Rental loss — no refund; quarantine
+                tax_on_property[year] = 0.0
+                residential_property_loss_pool += -ti
+
     cashflow_per_year = pre_tax_cash - tax_on_property
 
     # Overflow share portfolio: any positive year's cashflow is invested in shares.

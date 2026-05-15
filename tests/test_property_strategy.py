@@ -135,3 +135,26 @@ def test_property_negatively_geared_overflow_is_zero():
 
     assert (result.cashflow_per_year < 0).all()
     assert result.overflow_share_terminal_value == 0.0
+
+
+# =============================================================================
+# Federal Budget 2026-27 — restricted_2027 regime tests
+# =============================================================================
+
+def test_property_restricted_regime_no_refund_on_loss_year():
+    """Under restricted_2027 with start_year_index=0, a year-1 rental loss yields
+    tax_on_property = 0 (NOT a refund). The loss goes to the residential property
+    loss pool for later use against rental surplus or post-commencement capital gain.
+
+    Same year-1 inputs as test_property_year_one_cashflow_components but with
+    restriction active immediately:
+      pre_tax_cash:    -$16,962  (unchanged)
+      tax_on_property: $0        (was -$8,866 refund under current regime)
+      cashflow:        -$16,962  (vs -$8,096 under current)
+    """
+    inputs = make_default_inputs()
+    inputs.property_regime = "restricted_2027"
+    inputs.restricted_ng_start_year_index = 0  # restriction kicks in immediately
+    result = simulate_property_trial(inputs)
+
+    assert result.cashflow_per_year[0] == pytest.approx(-16_962, abs=50)
