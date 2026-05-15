@@ -83,6 +83,8 @@ def run_monte_carlo(
     drp: bool,
     serviceability_ceiling: float = 20_000,
     seed: int = 42,
+    # Federal Budget 2026-27 regime — kwarg with default for backward compat
+    property_regime: str = "current",
 ):
     """Run the full Monte Carlo simulation. Returns aggregated outputs."""
     rng = np.random.default_rng(seed)
@@ -123,6 +125,7 @@ def run_monte_carlo(
             cpi=cpi,
             horizon_years=horizon_years,
             selling_costs_pct=0.025,
+            property_regime=property_regime,
         )
         p_result = simulate_property_trial(p_inputs)
 
