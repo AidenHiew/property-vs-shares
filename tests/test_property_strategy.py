@@ -211,3 +211,49 @@ def test_property_restricted_regime_pool_offsets_future_surplus():
     assert result.cashflow_per_year[0] < 0
     # Year 2 surplus: pool absorbs taxable income → cashflow >= current regime
     assert result.cashflow_per_year[1] >= current_result.cashflow_per_year[1]
+
+
+def test_property_restricted_regime_transitional_cgt_split():
+    """Under restricted_2027 with default start_year_index=1, the gain splits at
+    end-of-year-1 commencement. Pre-commencement (year-1) gain uses current 50%
+    discount rules; post-commencement gain uses indexed cost base + 30%-min rate.
+
+    Setup: 25-year hold, 5.5% growth, 2.5% CPI, 37% MTR, $700k purchase. Force
+    loan rate near zero so cashflow is positive every year (no losses → no pool
+    confounder, isolating CGT mechanics).
+
+    Expected (rough hand-calc):
+      Commencement value (end of year 1): 700k × 1.055 = $738.5k
+      Pre-commencement nominal gain: 738.5k - (700k - $7k Div 43 yr 1) = ~$45.5k
+        Discounted (50%): ~$22.75k → tax @ 37% ≈ $8.4k
+      Sale price (year 25): 700k × 1.055^25 ≈ $2.66M
+      Post-commencement indexed base: 738.5k × 1.025^24 ≈ $1.336M
+        + selling_costs (~$66k) - 24 yrs Div 43 ($168k) ≈ $1.234M
+      Indexed gain ≈ 2.66M - 1.234M ≈ $1.43M
+        Tax @ max(37%, 30%) = 37% → ≈ $529k
+      Total CGT ≈ $537k. Materially more than current-rules baseline (~$381k).
+    """
+    inputs = make_default_inputs()
+    inputs.loan_rate_path = np.full(25, 0.001)  # near-zero rate → no losses
+    inputs.property_regime = "restricted_2027"
+    # default restricted_ng_start_year_index = 1
+    result = simulate_property_trial(inputs)
+
+    # Commencement value should equal end-of-year-1 modelled value
+    expected_commencement = 700_000 * 1.055
+    assert result.commencement_value == pytest.approx(expected_commencement, rel=0.01)
+
+    # Pre-commencement taxable gain: small (1 year of growth, post-50%-discount)
+    assert 15_000 < result.pre_commencement_taxable_gain < 35_000
+
+    # Post-commencement indexed gain dominates
+    assert result.post_commencement_indexed_gain > 1_200_000
+
+    # Total CGT should be in the ~$500-560k ballpark
+    assert 480_000 < result.cgt_paid_on_sale < 580_000
+
+    # And strictly higher than the current-regime equivalent
+    current_inputs = make_default_inputs()
+    current_inputs.loan_rate_path = np.full(25, 0.001)
+    current_result = simulate_property_trial(current_inputs)
+    assert result.cgt_paid_on_sale > current_result.cgt_paid_on_sale

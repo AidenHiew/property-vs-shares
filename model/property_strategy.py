@@ -17,7 +17,7 @@ from typing import Optional
 import numpy as np
 
 from config import BUILDING_COST_PCT, LAND_VALUE_PCT, SHARE_RETURN_FOR_OVERFLOW
-from model.tax import sa_land_tax, depreciation_for_year, cgt_payable
+from model.tax import sa_land_tax, depreciation_for_year, cgt_payable, cgt_payable_indexed
 from model.inflation import inflate_series
 
 
@@ -215,12 +215,82 @@ def simulate_property_trial(inputs: PropertyInputs) -> PropertyResult:
     selling_costs = gross_sale_price * inputs.selling_costs_pct
     terminal_loan_balance = balance_path[-1]
 
-    # Cost base: purchase price + selling costs (capitalised) - cumulative Div 43 claimed.
-    # (Stamp duty + buying costs added by comparison engine; not included here.)
-    cumulative_div43 = annual_depreciation * h  # all v1 depreciation treated as Div 43
-    cost_base = inputs.purchase_price + selling_costs - cumulative_div43
-    capital_gain = gross_sale_price - cost_base
-    cgt_paid = cgt_payable(capital_gain, holding_years=h, mtr=inputs.mtr)
+    # Default traceability outputs (zero unless restricted_2027 path executes).
+    commencement_value = 0.0
+    pre_commencement_taxable_gain = 0.0
+    post_commencement_indexed_gain = 0.0
+    terminal_loss_pool_offset = 0.0
+
+    if inputs.property_regime == "restricted_2027":
+        # --- Transitional CGT split at end of pre-commencement period ---
+        #
+        # Acquisition cost is allocated by years held in each period:
+        #   pre_years  = restricted_ng_start_year_index  (e.g. 1 for default May-2026 buy)
+        #   post_years = h - pre_years
+        # Div 43 (constant per year in v1) is split proportionally by years claimed.
+        # Selling costs are incurred at the sale event (year h-1, post-commencement)
+        # and allocated entirely to the post-commencement cost base.
+        # Stamp duty + buying costs aren't in v1 cost base on either side (BACKLOG §1).
+        pre_years = inputs.restricted_ng_start_year_index
+        post_years = h - pre_years
+        assert post_years > 0, (
+            f"restricted_ng_start_year_index ({pre_years}) must be < horizon ({h}); "
+            "transitional split needs at least 1 post-commencement year"
+        )
+
+        div43_pre = annual_depreciation * pre_years
+        div43_post = annual_depreciation * post_years
+        cumulative_div43 = div43_pre + div43_post
+
+        # Commencement value = modelled property value at end of pre-commencement period.
+        # If pre_years = 0 (restriction immediate), commencement = original purchase.
+        commencement_value = (
+            float(value_path[pre_years - 1]) if pre_years > 0 else float(inputs.purchase_price)
+        )
+
+        # Pre-commencement: nominal gain, current 50% discount rules.
+        # Cost base = purchase price - Div 43 claimed in pre-commencement years.
+        # No selling costs allocated here (they belong to the sale event).
+        pre_cost_base = inputs.purchase_price - div43_pre
+        pre_nominal_gain = max(0.0, commencement_value - pre_cost_base)
+        # Holding period for the pre-commencement portion. For the default
+        # 1-year pre period (May 2026 buy → 1 Jul 2027 commencement = ~13 months),
+        # the 50% discount applies. We pass 1.01 to ensure cgt_payable's strict
+        # >12-month gate triggers; tweak if pre_years is somehow 0.
+        holding_years_pre = max(pre_years, 1.01) if pre_years > 0 else 0.0
+        pre_cgt = cgt_payable(pre_nominal_gain, holding_years=holding_years_pre, mtr=inputs.mtr)
+        # Trace: post-50%-discount taxable amount (mirrors cgt_payable's internal calc
+        # so the user can sanity-check the dollar number that gets taxed at MTR).
+        pre_commencement_taxable_gain = (
+            pre_nominal_gain * (1 - 0.50) if holding_years_pre > 1.0 else pre_nominal_gain
+        )
+
+        # Post-commencement: indexed cost base from commencement value over post_years.
+        indexed_post_base = commencement_value * (1 + inputs.cpi) ** post_years
+        post_cost_base = indexed_post_base + selling_costs - div43_post
+        post_indexed_gain_raw = max(0.0, gross_sale_price - post_cost_base)
+
+        # Loss pool offsets POST-commencement gain only (conservative: pool only grew
+        # post-commencement under the restricted regime, so applying it pre would
+        # over-credit the carry-forward).
+        if residential_property_loss_pool > 0:
+            terminal_loss_pool_offset = min(
+                residential_property_loss_pool, post_indexed_gain_raw
+            )
+            post_indexed_gain = post_indexed_gain_raw - terminal_loss_pool_offset
+        else:
+            post_indexed_gain = post_indexed_gain_raw
+
+        post_commencement_indexed_gain = post_indexed_gain
+        post_cgt = cgt_payable_indexed(post_indexed_gain, mtr=inputs.mtr)
+        cgt_paid = pre_cgt + post_cgt
+
+    else:
+        # Current regime: nominal cost base + 50% discount via cgt_payable.
+        cumulative_div43 = annual_depreciation * h  # all v1 depreciation treated as Div 43
+        cost_base = inputs.purchase_price + selling_costs - cumulative_div43
+        capital_gain = gross_sale_price - cost_base
+        cgt_paid = cgt_payable(capital_gain, holding_years=h, mtr=inputs.mtr)
 
     terminal_after_tax_wealth = (
         gross_sale_price - selling_costs - terminal_loan_balance - cgt_paid
@@ -240,4 +310,8 @@ def simulate_property_trial(inputs: PropertyInputs) -> PropertyResult:
         terminal_after_tax_wealth=terminal_after_tax_wealth,
         overflow_share_terminal_value=overflow_share_terminal_value,
         outside_cash_required_per_year=outside_cash_required_per_year,
+        terminal_loss_pool_offset=terminal_loss_pool_offset,
+        commencement_value=commencement_value,
+        pre_commencement_taxable_gain=pre_commencement_taxable_gain,
+        post_commencement_indexed_gain=post_commencement_indexed_gain,
     )
