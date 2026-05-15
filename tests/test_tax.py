@@ -127,6 +127,28 @@ def test_cgt_at_exactly_12_months_no_discount():
     assert cgt_payable(gain=100_000, holding_years=1.0, mtr=0.37) == pytest.approx(37_000)
 
 
+# --- Federal Budget 2026-27 indexed CGT regime ---
+
+from model.tax import cgt_payable_indexed
+
+
+def test_cgt_indexed_high_mtr_pays_mtr():
+    """37% MTR earner: effective rate is MTR (above the 30% floor)."""
+    # $500k indexed gain × 37% = $185k
+    assert cgt_payable_indexed(500_000, mtr=0.37) == pytest.approx(185_000, abs=1)
+
+
+def test_cgt_indexed_low_mtr_pays_floor():
+    """19% MTR earner: 30% floor kicks in (vs old 50%-discount → 9.5% effective)."""
+    # $500k indexed gain × 30% = $150k
+    assert cgt_payable_indexed(500_000, mtr=0.19) == pytest.approx(150_000, abs=1)
+
+
+def test_cgt_indexed_zero_or_negative_gain_returns_zero():
+    assert cgt_payable_indexed(0, mtr=0.37) == 0.0
+    assert cgt_payable_indexed(-1_000, mtr=0.37) == 0.0
+
+
 from model.tax import sa_stamp_duty
 
 

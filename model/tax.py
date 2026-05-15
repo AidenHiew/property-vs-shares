@@ -68,6 +68,41 @@ def cgt_payable(gain: float, holding_years: float, mtr: float) -> float:
     return gain * mtr
 
 
+# Federal Budget 2026-27 — indexed CGT regime for established residential property
+# acquired after 7:30pm 12 May 2026. Replaces the 50% discount with cost-base
+# CPI indexation (caller is responsible for inflating the base) and a minimum
+# effective tax rate floor.
+CGT_RESTRICTED_MIN_EFFECTIVE_RATE = 0.30
+
+
+def cgt_payable_indexed(
+    indexed_gain: float,
+    mtr: float,
+    min_effective_rate: float = CGT_RESTRICTED_MIN_EFFECTIVE_RATE,
+) -> float:
+    """CGT under the Federal Budget 2026-27 indexed regime.
+
+    Effective rate = max(MTR, min_effective_rate). High-MTR earners pay MTR;
+    low-MTR earners are floored at the minimum (default 30%).
+
+    Args:
+        indexed_gain: capital gain after the cost base has been CPI-indexed and
+            after any quarantined-loss offset is applied. Caller responsibility.
+        mtr: investor's marginal tax rate.
+        min_effective_rate: floor for the effective rate (default 0.30 per the
+            12 May 2026 Budget announcement).
+
+    SIMPLIFICATION (announcement-only as of 2026-05-16): the announced "30%
+    minimum tax" is modelled as a simple floor on the effective rate. Real
+    legislation may interact with progressive brackets, Medicare levy, offsets
+    and exemptions in ways this fixed-MTR simplification does not capture.
+    Acceptable for a personal-use modeller; revisit when law passes.
+    """
+    if indexed_gain <= 0:
+        return 0.0
+    return indexed_gain * max(mtr, min_effective_rate)
+
+
 # SA conveyance duty bands: (upper_bound, base_duty_at_lower_bound, marginal_rate_above_lower_bound)
 # Source: RevenueSA — https://www.revenuesa.sa.gov.au/stamp-duty/transfer-of-property
 SA_DUTY_BANDS = [
