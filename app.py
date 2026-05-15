@@ -41,6 +41,19 @@ with st.sidebar:
         format_func=str.title,
     )
 
+    property_regime = st.selectbox(
+        "Negative gearing & CGT regime",
+        ["current", "restricted_2027"],
+        index=1,  # default to NEW regime — matches today-purchase of established property
+        format_func=lambda x: {
+            "current": "Current rules (full NG + 50% CGT discount)",
+            "restricted_2027": "Budget 2026-27 (NG quarantined + transitional CGT, FY2028+)",
+        }[x],
+        help="Federal Budget 2026-27 changes apply to established residential property "
+             "bought after 7:30pm 12 May 2026, effective 1 July 2027. Pick 'Current rules' "
+             "for new builds, grandfathered (pre-Budget) properties, or to compare baseline."
+    )
+
     gross_yield = st.slider("Gross rental yield %", 2.0, 7.0, 4.0, step=0.1) / 100
     vacancy_weeks = st.slider("Vacancy (weeks/yr)", 0, 8, 2)
 
@@ -107,6 +120,18 @@ buying_costs = 2_600  # conveyancing + inspection + loan app
 st.markdown(f"**Upfront cash deployed:** ${deposit + stamp_duty + buying_costs:,.0f} "
             f"(${deposit:,.0f} deposit + ${stamp_duty:,.0f} stamp duty + ${buying_costs:,.0f} buying costs)")
 
+# Federal Budget 2026-27 regime banner
+if property_regime == "restricted_2027":
+    st.info(
+        "🏛 **Federal Budget 2026-27 regime.** From FY2028: rental losses on this "
+        "property are quarantined (no salary refund; carry forward to future residential "
+        "income or capital gain). Terminal CGT splits at 1 Jul 2027 — gain accrued "
+        "before commencement uses current 50% discount; gain after commencement uses "
+        "CPI-indexed cost base + max(MTR, 30%) effective rate. Both changes are "
+        "**announcement-only** (not yet legislated). Model assumes no other residential "
+        "property income offsetting the loss pool."
+    )
+
 # Symmetric reinvestment banner
 st.warning(
     "⚠ Both strategies deploy the same total capital each year. When property needs $X to "
@@ -138,6 +163,7 @@ result = cached_run(
     management_fee_pct=management_fee_pct, maintenance_pct=maintenance_pct,
     property_age=property_age, asset_type=asset_type,
     depreciation_override=depreciation_override,
+    property_regime=property_regime,
     portfolio_profile=portfolio_profile,
     mode=mode,
     margin_loan_rate=margin_loan_rate, isolate_asset_quality=isolate_asset_quality,
