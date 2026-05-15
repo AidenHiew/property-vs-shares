@@ -257,3 +257,40 @@ def test_property_restricted_regime_transitional_cgt_split():
     current_inputs.loan_rate_path = np.full(25, 0.001)
     current_result = simulate_property_trial(current_inputs)
     assert result.cgt_paid_on_sale > current_result.cgt_paid_on_sale
+
+
+def test_property_loss_pool_cannot_offset_pre_commencement_gain():
+    """Conservative position: residential loss pool (built up post-commencement)
+    only offsets post-commencement gain — not the pre-commencement 50%-discounted
+    gain. Confirms the carry-forward mechanic doesn't reach back into the
+    pre-Budget-rules period.
+
+    Construct: 5y horizon, default start_year_index=1 (pre = year 1, post = years
+    2-5). 3% yield, 6% rate, 5.5% growth → years 2-5 deeply negative-geared, pool
+    grows large. The pool should fully consume post-commencement gain (zeroing
+    post-commencement CGT) but the pre-commencement gain still gets taxed.
+    """
+    inputs = make_default_inputs()
+    inputs.horizon_years = 5
+    inputs.loan_rate_path = np.full(5, 0.06)
+    inputs.vacancy_weeks_path = np.full(5, 2.0)
+    inputs.capital_growth_path = np.full(5, 0.055)
+    inputs.gross_yield = 0.03
+    inputs.property_regime = "restricted_2027"
+    # default restricted_ng_start_year_index = 1
+    result = simulate_property_trial(inputs)
+
+    # Year 1 had a refund (pre-commencement), years 2-5 didn't → pool > 0
+    # (4 years × ~$24k loss each ≈ $96k pool, well above the post-commencement
+    # gain of ~$95k after indexation, so should fully absorb it)
+    assert result.terminal_loss_pool_offset > 0
+
+    # Pre-commencement gain not zeroed by the pool — should still register
+    # as a positive nominal pre-commencement gain (1 year of 5.5% growth)
+    assert result.pre_commencement_taxable_gain > 0
+
+    # Post-commencement indexed gain should be zero or near-zero (pool absorbed it)
+    assert result.post_commencement_indexed_gain < 5_000
+
+    # Total CGT > 0 (pre-commencement portion still taxable)
+    assert result.cgt_paid_on_sale > 0
