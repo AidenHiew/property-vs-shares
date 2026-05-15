@@ -158,3 +158,22 @@ def test_property_restricted_regime_no_refund_on_loss_year():
     result = simulate_property_trial(inputs)
 
     assert result.cashflow_per_year[0] == pytest.approx(-16_962, abs=50)
+
+
+def test_property_restricted_regime_pre_commencement_period():
+    """Default `restricted_ng_start_year_index=1` means year 1 (FY2027) keeps
+    current rules (full NG refund); restriction kicks in from year 2 (FY2028)
+    onwards. Matches actual transition for a May-2026 today-purchase: bought in
+    FY2026, full NG benefit through FY2027, restricted from 1 Jul 2027 / FY2028.
+    """
+    inputs = make_default_inputs()
+    inputs.property_regime = "restricted_2027"
+    # default restricted_ng_start_year_index = 1
+    result = simulate_property_trial(inputs)
+
+    # Year 1 unchanged — full NG refund still applies
+    assert result.cashflow_per_year[0] == pytest.approx(-8_096, abs=50)
+
+    # Year 2 onward — restricted; no refund, so cashflow strictly worse than current
+    current_result = simulate_property_trial(make_default_inputs())
+    assert result.cashflow_per_year[1] < current_result.cashflow_per_year[1]
