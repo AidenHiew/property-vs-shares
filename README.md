@@ -52,4 +52,22 @@ See spec §15 (Open assumptions) and §16 (v1.1 backlog) for full detail.
 
 ## When tax law changes
 
-Most updates only require editing `config.py` (brackets, rates, thresholds). For the Federal Budget 2026-27 negative gearing changes (announced 12 May 2026), see spec §5.10 — a regime toggle is planned for v1.1.
+Most updates only require editing `config.py` (brackets, rates, thresholds).
+
+**Federal Budget 2026-27 — modelled.** Restricted negative gearing AND transitional CGT
+(50% discount → CPI-indexed cost base + 30%-min effective rate). Both effective 1 Jul 2027
+for established residential property bought after 7:30pm 12 May 2026. Toggle "Negative
+gearing & CGT regime" in the sidebar. Design rationale and review feedback in
+`docs/2026-05-16-budget-2026-27-design.md`.
+
+⚠ Both changes are **announcement-only and not yet legislated**. The model uses simplified
+interpretations:
+- `max(MTR, 30%)` floor for the 30% minimum rate (does not model bracket creep,
+  Medicare levy, or offsets)
+- Loss pool assumes the investor has no other residential property income or gains
+- Commencement value = modelled property value at end of model year 1 (transitional split)
+- Selling costs allocated to post-commencement; Div 43 split by year claimed
+- Loss pool offsets post-commencement gain only (conservative — pool cannot reach back
+  into the pre-commencement period)
+
+Revisit when legislation passes.

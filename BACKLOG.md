@@ -61,8 +61,12 @@ Last commit on `main`: `309d618 fix(app): wire max_top_up to serviceability_ceil
 - Single-property idiosyncratic risk shock events
 - Major capex events (roof, hot water, etc.)
 - Offset account as a third strategy
-- Federal Budget 2026-27 negative gearing regime toggle (depending on what announces)
 - Other states beyond SA
+
+## Done since v1
+
+- ✅ Federal Budget 2026-27 NG + CGT regime toggle (2026-05-16). See
+  `docs/2026-05-16-budget-2026-27-design.md` for design + GPT review notes.
 
 ---
 
