@@ -64,10 +64,10 @@ for regime in ("current", "restricted_2027"):
         textfont=dict(size=10, color="#666"),
         hovertemplate=(
             "<b>" + labels[regime] + "</b><br>"
-            "Property mix: %{text}<br>"
-            "Median wealth: $%{x:.2f}M<br>"
-            "P(solvent): %{y:.1f}%<br>"
-            "Beats pure shares: %{customdata:.1f}%"
+            "Property in mix: %{text}<br>"
+            "Typical wealth in 25 years: $%{x:.2f}M<br>"
+            "Chance you never run out of cash: %{y:.1f}%<br>"
+            "Beats pure shares: %{customdata:.1f}% of futures"
             "<extra></extra>"
         ),
         customdata=d["beats_pct"],
@@ -83,9 +83,9 @@ fig.add_annotation(
     x=restricted["median_M"][knee_idx],
     y=restricted["solvent_pct"][knee_idx],
     text=(
-        "<b>The knee.</b><br>"
-        "Left = safe & near-peak wealth.<br>"
-        "Right = small extra wealth, big solvency loss."
+        "<b>The sweet spot.</b><br>"
+        "Past this point you trade big safety<br>"
+        "for very little extra wealth."
     ),
     showarrow=True,
     arrowhead=2,
@@ -113,7 +113,7 @@ fig.add_vrect(
 fig.add_annotation(
     x=restricted["median_M"][8],  # ~80% mix
     y=18,
-    text="Danger zone<br>(under restricted_2027)",
+    text="Allocations here force-sell<br>in most futures (Budget 2026-27)",
     showarrow=False,
     font=dict(size=10, color="#BC4749"),
     align="center",
@@ -124,17 +124,17 @@ fig.add_annotation(
 
 fig.update_layout(
     title=dict(
-        text="<b>Allocation frontier</b><br>"
+        text="<b>What allocation should I pick?</b><br>"
              "<span style='font-size:13px;color:#666'>"
-             "Each point is a property/shares mix. Up-and-to-the-right is better. "
-             "Numbers above each point = % property allocation."
+             "Each point is a property/shares mix. Up-and-right = more wealth AND less risk of forced sale. "
+             "Numbers above each point = % allocated to property."
              "</span>",
         font=dict(size=22, color="#222"),
         x=0.02, xanchor="left",
         y=0.97, yanchor="top",
     ),
     xaxis=dict(
-        title=dict(text="Median terminal wealth", font=dict(size=13)),
+        title=dict(text="Most likely wealth after 25 years", font=dict(size=13)),
         tickprefix="$",
         ticksuffix="M",
         tickfont=dict(size=12, color="#444"),
@@ -143,7 +143,7 @@ fig.update_layout(
         showline=True, linecolor="#CCC",
     ),
     yaxis=dict(
-        title=dict(text="P(strategy stays solvent)", font=dict(size=13)),
+        title=dict(text="Chance you never run out of cash", font=dict(size=13)),
         ticksuffix="%",
         range=[0, 108],
         tickfont=dict(size=12, color="#444"),
@@ -173,7 +173,7 @@ fig.update_layout(
 # Reference line at P(solvent) = 95% — common "near-safe" threshold
 fig.add_hline(
     y=95, line_dash="dash", line_color="#AAA", line_width=1,
-    annotation_text="95% solvent", annotation_position="bottom left",
+    annotation_text="95% chance of staying within cash limit", annotation_position="bottom left",
     annotation_font=dict(size=10, color="#888"),
 )
 
