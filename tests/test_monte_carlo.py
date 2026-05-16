@@ -504,3 +504,88 @@ def test_p_solvent_consistent_with_forced_flags():
     import numpy as np
     expected_p_solvent = float(1 - result["forced_sale_flags"].mean())
     assert result["p_solvent"] == expected_p_solvent
+
+
+def test_wealth_paths_have_correct_shape():
+    """Year-by-year wealth arrays should be shape (trials, horizon_years)."""
+    result = run_monte_carlo(
+        trials=200, horizon_years=10,
+        purchase_price=700_000, deposit=140_000,
+        stamp_duty=30_000, buying_costs=2_600,
+        loan_rate_mu=0.06, loan_rate_sigma=0.01,
+        gross_yield=0.04,
+        vacancy_weeks_mu=2.0, vacancy_weeks_sigma=1.0,
+        rental_yield_sigma=0.0,
+        property_growth_mu=0.055, property_growth_sigma=0.11,
+        management_fee_pct=0.07, maintenance_pct=0.012,
+        property_age="established_post_2017", asset_type="house",
+        depreciation_override=None,
+        share_return_mu=0.085, share_return_sigma=0.15,
+        portfolio_profile="blended",
+        mode="realistic",
+        margin_loan_rate=0.075, isolate_asset_quality=False,
+        correlation=0.3,
+        mtr=0.37, cpi=0.025, drp=True,
+        serviceability_ceiling=20_000, seed=42,
+    )
+    assert result["property_wealth_path"].shape == (200, 10)
+    assert result["shares_wealth_path"].shape == (200, 10)
+    assert result["mixed_wealth_path"].shape == (200, 10)
+
+
+def test_wealth_path_is_monotonic_average():
+    """Wealth path should be increasing on average — both assets appreciate."""
+    import numpy as np
+    result = run_monte_carlo(
+        trials=500, horizon_years=10,
+        purchase_price=700_000, deposit=140_000,
+        stamp_duty=30_000, buying_costs=2_600,
+        loan_rate_mu=0.06, loan_rate_sigma=0.01,
+        gross_yield=0.04,
+        vacancy_weeks_mu=2.0, vacancy_weeks_sigma=1.0,
+        rental_yield_sigma=0.0,
+        property_growth_mu=0.055, property_growth_sigma=0.11,
+        management_fee_pct=0.07, maintenance_pct=0.012,
+        property_age="established_post_2017", asset_type="house",
+        depreciation_override=None,
+        share_return_mu=0.085, share_return_sigma=0.15,
+        portfolio_profile="blended",
+        mode="realistic",
+        margin_loan_rate=0.075, isolate_asset_quality=False,
+        correlation=0.3,
+        mtr=0.37, cpi=0.025, drp=True,
+        serviceability_ceiling=20_000, seed=42,
+    )
+    # Median wealth at year 10 > median wealth at year 1, for both strategies
+    median_path_prop = np.median(result["property_wealth_path"], axis=0)
+    median_path_shr = np.median(result["shares_wealth_path"], axis=0)
+    assert median_path_prop[-1] > median_path_prop[0]
+    assert median_path_shr[-1] > median_path_shr[0]
+
+
+def test_mixed_wealth_path_is_weighted_average():
+    """mixed_wealth_path[t,y] = mix * property[t,y] + (1-mix) * shares[t,y]."""
+    import numpy as np
+    result = run_monte_carlo(
+        trials=200, horizon_years=10,
+        purchase_price=700_000, deposit=140_000,
+        stamp_duty=30_000, buying_costs=2_600,
+        loan_rate_mu=0.06, loan_rate_sigma=0.01,
+        gross_yield=0.04,
+        vacancy_weeks_mu=2.0, vacancy_weeks_sigma=1.0,
+        rental_yield_sigma=0.0,
+        property_growth_mu=0.055, property_growth_sigma=0.11,
+        management_fee_pct=0.07, maintenance_pct=0.012,
+        property_age="established_post_2017", asset_type="house",
+        depreciation_override=None,
+        share_return_mu=0.085, share_return_sigma=0.15,
+        portfolio_profile="blended",
+        mode="realistic",
+        margin_loan_rate=0.075, isolate_asset_quality=False,
+        correlation=0.3,
+        mtr=0.37, cpi=0.025, drp=True,
+        serviceability_ceiling=20_000, seed=42,
+        property_share_mix=0.6,
+    )
+    expected = 0.6 * result["property_wealth_path"] + 0.4 * result["shares_wealth_path"]
+    np.testing.assert_array_almost_equal(result["mixed_wealth_path"], expected)

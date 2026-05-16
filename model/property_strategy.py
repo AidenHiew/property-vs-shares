@@ -71,6 +71,7 @@ class PropertyResult:
     terminal_after_tax_wealth: float
     overflow_share_terminal_value: float
     outside_cash_required_per_year: np.ndarray  # = max(0, -cashflow); used by shares strategy
+    wealth_per_year: np.ndarray  # mark-to-market PRE-tax: value - balance + overflow_balance, per year
     # --- Restricted regime traceability (zero under "current" regime) ---
     terminal_loss_pool_offset: float = 0.0           # pool $ used against post-commencement gain
     commencement_value: float = 0.0                  # property value at end of pre-commencement period
@@ -208,13 +209,20 @@ def simulate_property_trial(inputs: PropertyInputs) -> PropertyResult:
     # Use a constant share return for v1 (overflow is small; full Monte Carlo treatment
     # lives on the shares strategy module). 8.5% pre-tax, no dividend tax drag (v1 simplification).
     overflow_balance = 0.0
+    overflow_balance_path = np.zeros(h)
     for year in range(h):
         overflow_balance *= (1 + SHARE_RETURN_FOR_OVERFLOW)
         if cashflow_per_year[year] > 0:
             overflow_balance += cashflow_per_year[year]
             # Note: future years' cashflow array is not affected — we just track the parallel bucket.
+        overflow_balance_path[year] = overflow_balance
 
     overflow_share_terminal_value = overflow_balance
+
+    # Mark-to-market wealth per year (PRE-tax of hypothetical sale CGT).
+    # Used for path visualisation. Differs from terminal_after_tax_wealth at year h-1
+    # because the latter nets selling_costs and CGT.
+    wealth_per_year = value_path - balance_path + overflow_balance_path
 
     # Terminal sale event (end of horizon, year h-1).
     gross_sale_price = value_path[-1]
@@ -320,6 +328,7 @@ def simulate_property_trial(inputs: PropertyInputs) -> PropertyResult:
         terminal_after_tax_wealth=terminal_after_tax_wealth,
         overflow_share_terminal_value=overflow_share_terminal_value,
         outside_cash_required_per_year=outside_cash_required_per_year,
+        wealth_per_year=wealth_per_year,
         terminal_loss_pool_offset=terminal_loss_pool_offset,
         commencement_value=commencement_value,
         pre_commencement_taxable_gain=pre_commencement_taxable_gain,

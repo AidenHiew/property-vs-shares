@@ -43,6 +43,7 @@ class SharesResult:
     total_dividend_tax: float
     cgt_paid_on_sale: float
     terminal_after_tax_wealth: float
+    wealth_per_year: np.ndarray  # mark-to-market PRE-tax: portfolio_value at end of each year
 
 
 def simulate_shares_trial(inputs: SharesInputs) -> SharesResult:
@@ -55,6 +56,7 @@ def simulate_shares_trial(inputs: SharesInputs) -> SharesResult:
     cumulative_cost_base = inputs.initial_capital
 
     cashflow_per_year = np.zeros(h)
+    wealth_per_year = np.zeros(h)
     total_dividends = 0.0
     total_dividend_tax = 0.0
 
@@ -102,6 +104,9 @@ def simulate_shares_trial(inputs: SharesInputs) -> SharesResult:
         # MER is excluded (fund-internal, not out-of-pocket).
         cashflow_per_year[year] = -(div_tax + margin_interest + inputs.external_contributions[year])
 
+        # Mark-to-market portfolio value at end of this year (PRE-tax of hypothetical liquidation).
+        wealth_per_year[year] = portfolio_value
+
     gross_terminal_value = portfolio_value
     capital_gain = gross_terminal_value - cumulative_cost_base
     cgt_paid = cgt_payable(capital_gain, holding_years=h, mtr=inputs.mtr)
@@ -118,4 +123,5 @@ def simulate_shares_trial(inputs: SharesInputs) -> SharesResult:
         total_dividend_tax=total_dividend_tax,
         cgt_paid_on_sale=cgt_paid,
         terminal_after_tax_wealth=terminal_after_tax_wealth,
+        wealth_per_year=wealth_per_year,
     )

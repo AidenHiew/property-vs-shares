@@ -131,6 +131,8 @@ def run_monte_carlo(
     p_terminal = np.zeros(trials)
     s_terminal = np.zeros(trials)
     p_outside_cash = np.zeros((trials, horizon_years))
+    p_wealth_path = np.zeros((trials, horizon_years))
+    s_wealth_path = np.zeros((trials, horizon_years))
 
     for t in range(trials):
         p_inputs = PropertyInputs(
@@ -182,6 +184,8 @@ def run_monte_carlo(
         p_terminal[t] = p_result.terminal_after_tax_wealth + p_result.overflow_share_terminal_value
         s_terminal[t] = s_result.terminal_after_tax_wealth
         p_outside_cash[t] = p_result.outside_cash_required_per_year
+        p_wealth_path[t] = p_result.wealth_per_year
+        s_wealth_path[t] = s_result.wealth_per_year
 
     forced_flags = flag_forced_sales(p_outside_cash, serviceability_ceiling)
 
@@ -211,6 +215,11 @@ def run_monte_carlo(
         "forced_sale_flags": forced_flags,
         "mixed_terminal_wealth": mixed_terminal,
         "median_mixed_wealth": float(np.median(mixed_terminal)),
+        "property_wealth_path": p_wealth_path,          # shape (trials, horizon_years)
+        "shares_wealth_path": s_wealth_path,            # shape (trials, horizon_years)
+        "mixed_wealth_path": (
+            mix * p_wealth_path + (1 - mix) * s_wealth_path
+        ),                                              # shape (trials, horizon_years)
         "p_mix_beats_pure_shares": float(
             ((mixed_terminal > s_terminal) & (mixed_forced_flags == 0)).mean()
         ),
