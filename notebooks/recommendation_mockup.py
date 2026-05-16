@@ -31,17 +31,33 @@ for mix_pct in mixes_pct:
         "p_beats_shares": r["p_mix_beats_pure_shares"],
     })
 
-# Recommendation: highest wealth subject to P(solvent) >= 0.95
-safe_rows = [row for row in rows if row["p_solvent"] >= 0.95]
-recommended = max(safe_rows, key=lambda r: r["median_wealth"]) if safe_rows else rows[0]
-rec_mix = recommended["mix_pct"]
-
-# Three personas — clean preset percentages
-PERSONAS = [
-    ("Safe Player", 25, "You sleep well every night. The worst-year cash demand never breaches your ceiling. You won't get rich quick, but you also won't be forced to sell at the bottom of a downturn."),
-    ("Balanced", 50, "The Goldilocks zone for most people. Captures most of property's upside while keeping cashflow stress within tolerance in 99%+ of futures."),
-    ("Wealth Maximizer", 75, "Betting on the good futures. Highest typical wealth, but about 1 in 5 futures forces you to sell at a bad moment because cashflow exceeds your ceiling."),
+# Three personas defined by SAFETY APPETITE. Allocation is computed: pick the
+# highest-wealth mix where P(solvent) >= the persona's threshold.
+PERSONA_DEFS = [
+    ("Safe Player",       0.99, "I want a near-certainty of staying within my cash ceiling — even if it costs me some wealth."),
+    ("Balanced",          0.95, "I want very high safety, but I'll accept a small chance of cashflow stress for more wealth."),
+    ("Wealth Maximizer",  0.85, "I'll accept real risk of forced sale (~1 in 7 futures) in exchange for the highest wealth."),
 ]
+
+
+def find_optimal_mix(rows, min_p_solvent: float):
+    """Return the row with highest median_wealth subject to P(solvent) >= threshold.
+    Falls back to the all-shares row if no mix meets the threshold."""
+    safe = [r for r in rows if r["p_solvent"] >= min_p_solvent]
+    if not safe:
+        return rows[0]  # fallback: all shares (highest safety)
+    return max(safe, key=lambda r: r["median_wealth"])
+
+
+# Resolve each persona to its computed mix
+PERSONAS = []
+for name, threshold, blurb in PERSONA_DEFS:
+    opt = find_optimal_mix(rows, threshold)
+    PERSONAS.append((name, opt["mix_pct"], threshold, blurb))
+
+# Recommended = the Balanced persona (95% threshold)
+rec_mix = PERSONAS[1][1]
+recommended = get_row_helper = next(r for r in rows if r["mix_pct"] == rec_mix)
 
 
 # ---------- Render HTML ----------
@@ -63,20 +79,18 @@ def get_row(mix_pct):
     return next(r for r in rows if r["mix_pct"] == mix_pct)
 
 
-# Build persona cards HTML
+# Build persona cards HTML — allocations are NOW dynamic (computed from safety threshold)
 cards_html = ""
-for persona_name, mix_pct, blurb in PERSONAS:
+for persona_name, mix_pct, threshold, blurb in PERSONAS:
     row = get_row(mix_pct)
-    is_recommended = (mix_pct == rec_mix) or (
-        # If rec_mix is between two persona mixes, mark Balanced as recommended
-        rec_mix not in [p[1] for p in PERSONAS] and persona_name == "Balanced"
-    )
+    is_recommended = persona_name == "Balanced"
     badge_html = '<div class="recommended-badge">★ Recommended for your scenario</div>' if is_recommended else ''
     card_class = "card recommended" if is_recommended else "card"
     cards_html += f"""
         <div class="{card_class}">
             {badge_html}
             <div class="persona-name">{persona_name}</div>
+            <div class="persona-threshold">Safety appetite: ≥{int(threshold*100)}% safe</div>
             <div class="allocation">{mix_pct}% property</div>
             <div class="allocation-sub">{100-mix_pct}% shares</div>
             <div class="divider"></div>
@@ -205,7 +219,13 @@ html = f"""<!DOCTYPE html>
     color: #6b7280;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    margin-bottom: 8px;
+    margin-bottom: 4px;
+  }}
+  .persona-threshold {{
+    font-size: 11px;
+    color: #9ca3af;
+    margin-bottom: 14px;
+    font-weight: 500;
   }}
   .allocation {{
     font-size: 32px;
@@ -315,11 +335,12 @@ html = f"""<!DOCTYPE html>
   <div class="scenario-context">
     <strong>Scenario:</strong> $700k property, 20% deposit, 25-year horizon, 37% MTR, $20k cashflow ceiling, Budget 2026-27 regime.
     <br>
-    <strong>Recommendation logic:</strong> highest typical wealth subject to ≥95% chance of avoiding forced sale.
+    <strong>Recommendation logic:</strong> for each safety appetite (≥99% / ≥95% / ≥85%), pick the highest-wealth allocation that meets it.
+    The three card percentages are <em>computed from your inputs</em> — they will shift if you change deposit, MTR, ceiling, or regime.
   </div>
 
-  <h2>Option A — Persona cards (Wealthfront-style)</h2>
-  <p class="section-subtitle">User reads three short stories, picks the one that matches their personality. The recommended card is highlighted.</p>
+  <h2>Option A — Persona cards (safety-appetite driven)</h2>
+  <p class="section-subtitle">User picks their safety appetite (≥99% / ≥95% / ≥85%); the optimizer figures out the allocation. Numbers shift with the scenario — these are computed for your current inputs, not hardcoded presets.</p>
 
   <div class="cards-container">
     {cards_html}
