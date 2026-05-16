@@ -6,22 +6,67 @@ a real allocation decision a second time.
 
 ## Pickup notes (when resuming)
 
-Quick orientation for the next session:
+**Last touched: 2026-05-16, evening session.** Working tree clean, 82/82 tests passing,
+all six session commits on `main` (no remote — local only).
 
-1. **Run the app to remind yourself what it does:** `source .venv/bin/activate && streamlit run app.py`
-2. **Check tests still green:** `pytest -q` (should be 66 passed)
-3. **Suggested order for v1.1 work** (cheapest correctness wins first):
-   1. Stamp duty + buying costs in CGT cost base (Bugs §1) — small, tested-in-isolation, slightly
-      raises `p_property_wins` so worth knowing before any decision
-   2. Dual same-seed RNG (Bugs §2) — one-line fix, removes a latent defect
-   3. `rental_yield_sigma` slider (Bugs §3) — decide: plumb it through or hide it. Hiding is faster.
-   4. `p_solvent` dedup (Polish §1) — trivial cleanup
-   5. `worst_year_cash` exact deflation (Polish §2) — only if the rough number ever feels wrong
-4. **Larger v1.1 features** (margin-call modelling, capex shocks, offset account, Federal Budget
-   2026-27 negative-gearing toggle) are bigger commitments — brainstorm scope before plunging in.
+### What landed in the 2026-05-16 evening session
 
-Last meaningful commit on `main`: `fe2836a feat(monte-carlo): opt-in Student-t innovations`
-(Budget 2026-27 regime + joint-success metric + tornado all landed 2026-05-16; see "Done since v1" below.)
+Six commits, ordered:
+1. `7ef3baf` test — scenario sweep script (`notebooks/scenario_sweep.py`)
+2. `8775380` **feat — joint `p_property_succeeds` metric + reframed app headline**
+3. `a6120ac` test — tornado sensitivity (`notebooks/tornado.py`)
+4. `fe2836a` feat — opt-in Student-t for property + share returns
+5. `ca4dd41` docs — this file: ticked off shipped, captured findings
+6. `8bd01f6` feat — extended Student-t to loan_rate (the tornado-dominant input)
+
+### The three findings worth re-reading before doing anything new
+
+1. **Honest headline = 31.6%, not 70%.** Under restricted_2027, joint success
+   `p_property_wins ∧ p_solvent` is what matters. Solvency is the binding constraint.
+2. **Loan rate dominates under restricted regime** — 55pp swing in `p_property_succeeds`
+   per the tornado. `mtr` effect collapses to <1pp (NG quarantining kills the tax shield).
+3. **Symmetric fat tails barely move headlines, but inflate p99 worst-year cash.**
+   At df=3, `p_succeeds` actually goes UP (low-rate draws rescue marginal trials) but
+   `worst_year p99` goes from $34.7k → $51.5k. The t-dist feature's real value is
+   inspecting tail metrics, not headlines.
+
+### Suggested resume order
+
+1. **Smoke-test the new headline in Streamlit first** (5 min).
+   `source .venv/bin/activate && streamlit run app.py`
+   Toggle the regime, toggle Student-t in Advanced. Does the 31.6% feel right
+   against your intuition? If it doesn't, that discrepancy is the next signal.
+
+2. **Re-run the tornado with `loan_rate_distribution=student_t`** (15 min, mostly
+   re-typing the script). Confirms loan_rate is *still* the dominant driver under
+   fat tails — should be, but worth verifying. Edit `notebooks/tornado.py` to thread
+   `loan_rate_distribution=dist` into the `run(...)` calls.
+
+3. **Pick from the BACKLOG below.** Highest decision-relevance items are now flagged
+   in the "Surfaced by 2026-05-16 sensitivity work" section — start there, not the
+   original 2026-05-11 cleanup list. The pre-2026-05-11 bugs are still real but
+   smaller-leverage.
+
+### Decision point you parked
+
+**Allocation-mix slider** (#4 from the finance-expert recommendation list). PM-grade
+framing — "what mix of property/shares?", not binary. Needs an Opus-tier design
+conversation (how does equal-cash rule split across two strategies? how does
+serviceability work for a 60/40 mix?) before any code. Captured under "Surfaced by
+2026-05-16…" → "Allocation-mix framing."
+
+### Setup commands
+
+```bash
+cd "/Users/aidenmacmini/AI Project/Financial Modeling/property-vs-shares"
+source .venv/bin/activate
+PYTHONPATH=. pytest -q              # expect 82 passed
+PYTHONPATH=. python notebooks/scenario_sweep.py   # full regime × dial sweep
+PYTHONPATH=. python notebooks/tornado.py          # sensitivity ranking
+streamlit run app.py                # launch UI
+```
+
+Last meaningful commit on `main`: `8bd01f6 feat(monte-carlo): extend opt-in Student-t to loan_rate_paths`
 
 ## Bugs / correctness
 
