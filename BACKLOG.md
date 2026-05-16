@@ -20,7 +20,8 @@ Quick orientation for the next session:
 4. **Larger v1.1 features** (margin-call modelling, capex shocks, offset account, Federal Budget
    2026-27 negative-gearing toggle) are bigger commitments — brainstorm scope before plunging in.
 
-Last commit on `main`: `309d618 fix(app): wire max_top_up to serviceability_ceiling; drop unused import`
+Last meaningful commit on `main`: `fe2836a feat(monte-carlo): opt-in Student-t innovations`
+(Budget 2026-27 regime + joint-success metric + tornado all landed 2026-05-16; see "Done since v1" below.)
 
 ## Bugs / correctness
 
@@ -63,10 +64,48 @@ Last commit on `main`: `309d618 fix(app): wire max_top_up to serviceability_ceil
 - Offset account as a third strategy
 - Other states beyond SA
 
+## Surfaced by 2026-05-16 sensitivity work (post-Budget regime build)
+
+- **Loan-rate fat tails matter MORE than return fat tails** under the restricted regime.
+  The tornado (commit `a6120ac`) shows `loan_rate_mu` drives a 55pp swing in
+  `p_property_succeeds` — the dominant input by a wide margin. The Student-t feature
+  (commit `fe2836a`) deliberately leaves `loan_rate_paths` Gaussian per design lock; the
+  2x2 confirmed t-dist on returns barely moves the headline because returns aren't the
+  binding constraint, rates are. **v1.1 candidate:** allow `return_distribution` to also
+  cover `loan_rate_paths` (or add a separate `loan_rate_distribution` toggle). Without
+  it, the t-dist feature is honest about return tails but blind to rate-shock tails —
+  which is the actual risk under restricted_2027.
+
+- **Property age toggle is a no-op under v1's depreciation simplification.**
+  The 5-row sweep (`new_build` / `established_post_2017` / `established_pre_2017`)
+  produces bit-identical numbers because `model/tax.py:depreciation_for_year` returns
+  Div 43 only, ignoring `property_age`. This interacts with the Budget 2026-27 regime
+  toggle: in real life, a new build *retains full NG* and can elect either CGT method,
+  whereas the model treats them identically. Either: (a) UI clarification — banner
+  warns the regime toggle should be `current` for new builds, or (b) auto-couple
+  `property_age == "new_build"` → force `regime = "current"` (with override).
+
+- **Allocation-mix framing.** Real PMs don't ask "100% property OR 100% shares" — they
+  ask "what mix?". A `property_share_mix` slider running both strategies in parallel
+  and reporting blended outcomes is conceptually simple but architecturally non-trivial
+  (how does the equal-cash rule split across two strategies? how does serviceability
+  work for a 60/40 mix?). Defer until base model is stable.
+
 ## Done since v1
 
 - ✅ Federal Budget 2026-27 NG + CGT regime toggle (2026-05-16). See
   `docs/2026-05-16-budget-2026-27-design.md` for design + GPT review notes.
+- ✅ Joint success metric `p_property_succeeds = P(wins ∧ solvent)` and reframed
+  app headline (2026-05-16, commit `8775380`). The naive `p_property_wins` was
+  misleading — it included trials where the strategy "won" on paper but was forced
+  insolvent along the way. Joint metric drops the BASE headline from 70% → 31.6%
+  under restricted_2027, which is the honest decision-relevant number.
+- ✅ Tornado sensitivity analysis (2026-05-16, commit `a6120ac`). Ranks 10 inputs
+  by their swing in `p_property_succeeds`. **Headline finding:** under restricted
+  regime, `loan_rate_mu` dominates (55pp swing); MTR effect collapses to <1pp.
+- ✅ Student-t innovations opt-in (2026-05-16, commit `fe2836a`). Default Gaussian
+  preserved. Toggle in Advanced UI. Realized σ rescaled to match user-specified σ.
+  See "loan-rate fat tails" item above for follow-on work.
 
 ---
 
