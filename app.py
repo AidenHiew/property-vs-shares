@@ -174,6 +174,15 @@ def _merged_card_html(row):
     """
 
 
+def _render_html(html: str) -> None:
+    """Render raw HTML via st.markdown, stripping all leading whitespace per line
+    so the markdown parser doesn't treat 4+ space-indented lines as code blocks.
+    All HTML we build via f-strings is indented for source readability — this
+    helper makes it safe to pass to st.markdown without re-flowing the source."""
+    flat = "\n".join(line.lstrip() for line in html.strip().split("\n"))
+    st.markdown(flat, unsafe_allow_html=True)
+
+
 def render_persona_cards(rows):
     """Render the 3 persona cards as styled HTML via st.markdown.
     Handles merge case (all 3 resolve to same mix) and impossible case (no ≥99% safe)."""
@@ -189,11 +198,11 @@ def render_persona_cards(rows):
         if len(mix_pcts) == 1:
             single_mix = resolved[1]["row"]
             html = _merged_card_html(single_mix)
-            st.markdown(html, unsafe_allow_html=True)
+            _render_html(html)
             return
 
     html = _three_cards_html(resolved, safe_player_failed)
-    st.markdown(html, unsafe_allow_html=True)
+    _render_html(html)
 
 
 def render_comparison_table(rows, recommended_mix):
@@ -234,7 +243,7 @@ def render_comparison_table(rows, recommended_mix):
         <tbody>{table_rows_html}</tbody>
     </table>
     """
-    st.markdown(html, unsafe_allow_html=True)
+    _render_html(html)
 
 st.set_page_config(page_title="Property vs Shares", layout="wide")
 
@@ -397,8 +406,8 @@ with col_display:
 stamp_duty = sa_stamp_duty(purchase_price)
 buying_costs = 2_600  # conveyancing + inspection + loan app
 
-st.markdown(f"**Upfront cash deployed:** ${deposit + stamp_duty + buying_costs:,.0f} "
-            f"(${deposit:,.0f} deposit + ${stamp_duty:,.0f} stamp duty + ${buying_costs:,.0f} buying costs)")
+st.markdown(f"**Upfront cash deployed:** \\${deposit + stamp_duty + buying_costs:,.0f} "
+            f"(\\${deposit:,.0f} deposit + \\${stamp_duty:,.0f} stamp duty + \\${buying_costs:,.0f} buying costs)")
 
 # Apply Budget 2026-27 new-build carve-out unless explicitly overridden.
 # Per the announcement, new builds retain full NG and can elect either CGT method.
@@ -436,8 +445,8 @@ if (
 
 # Symmetric reinvestment banner
 st.warning(
-    "⚠ Both strategies deploy the same total capital each year. When property needs $X to "
-    "feed negative gearing, shares invests the same $X. (Equal outside-cash contributions — ON.)"
+    "⚠ Both strategies deploy the same total capital each year. When property needs \\$X to "
+    "feed negative gearing, shares invests the same \\$X. (Equal outside-cash contributions — ON.)"
 )
 
 # Margin call warning if Mode B
