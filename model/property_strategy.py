@@ -51,6 +51,12 @@ class PropertyInputs:
     # pre-commencement (FY2027, current rules); year 2+ is post-commencement (FY2028+,
     # restricted rules). Matches a May-2026 today-purchase.
     restricted_ng_start_year_index: int = 1
+    # Acquisition costs incurred at purchase: stamp duty + conveyancing/inspection/
+    # loan-application fees. ATO allows these as cost-base inclusions (s110-25 ITAA97).
+    # Loan-app fees are technically borrowing costs deductible separately but bundled
+    # here for simplicity per BACKLOG §1 note. Default 0.0 preserves backward
+    # compatibility for tests that construct PropertyInputs directly without this field.
+    acquisition_costs: float = 0.0
 
 
 @dataclass
@@ -249,9 +255,10 @@ def simulate_property_trial(inputs: PropertyInputs) -> PropertyResult:
         )
 
         # Pre-commencement: nominal gain, current 50% discount rules.
-        # Cost base = purchase price - Div 43 claimed in pre-commencement years.
-        # No selling costs allocated here (they belong to the sale event).
-        pre_cost_base = inputs.purchase_price - div43_pre
+        # Cost base = purchase price + acquisition costs (stamp duty + conveyancing/
+        # inspections; incurred at purchase, i.e. pre-commencement) - Div 43 claimed
+        # in pre-commencement years. No selling costs here (they belong to the sale event).
+        pre_cost_base = inputs.purchase_price + inputs.acquisition_costs - div43_pre
         pre_nominal_gain = max(0.0, commencement_value - pre_cost_base)
         # Holding period for the pre-commencement portion. For the default
         # 1-year pre period (May 2026 buy → 1 Jul 2027 commencement = ~13 months),
@@ -287,8 +294,11 @@ def simulate_property_trial(inputs: PropertyInputs) -> PropertyResult:
 
     else:
         # Current regime: nominal cost base + 50% discount via cgt_payable.
+        # Includes acquisition costs (stamp duty + conveyancing/inspection/loan-app fees;
+        # loan-app fees are technically borrowing costs deductible separately but bundled
+        # here for simplicity per BACKLOG §1 note).
         cumulative_div43 = annual_depreciation * h  # all v1 depreciation treated as Div 43
-        cost_base = inputs.purchase_price + selling_costs - cumulative_div43
+        cost_base = inputs.purchase_price + inputs.acquisition_costs + selling_costs - cumulative_div43
         capital_gain = gross_sale_price - cost_base
         cgt_paid = cgt_payable(capital_gain, holding_years=h, mtr=inputs.mtr)
 

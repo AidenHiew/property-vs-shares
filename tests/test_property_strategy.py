@@ -294,3 +294,61 @@ def test_property_loss_pool_cannot_offset_pre_commencement_gain():
 
     # Total CGT > 0 (pre-commencement portion still taxable)
     assert result.cgt_paid_on_sale > 0
+
+
+# =============================================================================
+# acquisition_costs in CGT cost base (BACKLOG §1 fix)
+# =============================================================================
+
+def test_acquisition_costs_reduces_cgt_current_regime():
+    """Adding acquisition_costs to the cost base reduces CGT proportionally."""
+    inputs_no_costs = make_default_inputs()
+    inputs_with_costs = make_default_inputs()
+    inputs_with_costs.acquisition_costs = 34_600  # $32k stamp + $2.6k buying
+
+    r_no = simulate_property_trial(inputs_no_costs)
+    r_with = simulate_property_trial(inputs_with_costs)
+
+    # CGT should drop by roughly MTR × 0.5 × acquisition_costs (after 50% discount)
+    # = 0.37 × 0.5 × 34_600 ≈ $6,401
+    expected_cgt_reduction = 0.37 * 0.5 * 34_600
+    actual_reduction = r_no.cgt_paid_on_sale - r_with.cgt_paid_on_sale
+    assert actual_reduction == pytest.approx(expected_cgt_reduction, abs=10)
+
+    # Terminal wealth should rise by the same amount (only CGT changed)
+    assert (
+        r_with.terminal_after_tax_wealth - r_no.terminal_after_tax_wealth
+        == pytest.approx(expected_cgt_reduction, abs=10)
+    )
+
+
+def test_acquisition_costs_in_pre_commencement_cost_base_restricted():
+    """Under restricted_2027, acquisition costs reduce the pre-commencement gain,
+    NOT the post-commencement indexed gain (acq costs incurred pre-commencement)."""
+    inputs_no_costs = make_default_inputs()
+    inputs_no_costs.property_regime = "restricted_2027"
+    inputs_no_costs.loan_rate_path = np.full(25, 0.001)  # no losses → isolate CGT mechanics
+
+    inputs_with_costs = make_default_inputs()
+    inputs_with_costs.property_regime = "restricted_2027"
+    inputs_with_costs.loan_rate_path = np.full(25, 0.001)
+    inputs_with_costs.acquisition_costs = 34_600
+
+    r_no = simulate_property_trial(inputs_no_costs)
+    r_with = simulate_property_trial(inputs_with_costs)
+
+    # The pre-commencement taxable gain should drop by approximately
+    # 0.5 × acquisition_costs (after 50% discount, since pre period is >12 months)
+    pre_taxable_drop = r_no.pre_commencement_taxable_gain - r_with.pre_commencement_taxable_gain
+    assert pre_taxable_drop == pytest.approx(0.5 * 34_600, abs=10)
+
+    # Post-commencement indexed gain should be UNCHANGED (acq costs don't touch it)
+    assert r_with.post_commencement_indexed_gain == pytest.approx(
+        r_no.post_commencement_indexed_gain, abs=10
+    )
+
+
+def test_default_acquisition_costs_is_zero_preserves_v1_behaviour():
+    """Direct PropertyInputs constructions without acquisition_costs default to 0.0."""
+    inputs = make_default_inputs()
+    assert inputs.acquisition_costs == 0.0

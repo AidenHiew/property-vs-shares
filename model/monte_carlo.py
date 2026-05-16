@@ -145,6 +145,7 @@ def run_monte_carlo(
             cpi=cpi,
             horizon_years=horizon_years,
             selling_costs_pct=0.025,
+            acquisition_costs=stamp_duty + buying_costs,
             property_regime=property_regime,
         )
         p_result = simulate_property_trial(p_inputs)
