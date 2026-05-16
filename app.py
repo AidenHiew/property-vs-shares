@@ -41,6 +41,17 @@ with st.sidebar:
         format_func=str.title,
     )
 
+    property_share_mix_pct = st.slider(
+        "Property share of allocation (%)",
+        0, 100, 100, step=5,
+        help="100% = pure property strategy (current default). 0% = pure shares. "
+             "Anything in between is a weighted blend per Monte Carlo trial — preserves "
+             "the property↔shares correlation structure automatically. Treats the property "
+             "as continuously divisible (you can't actually own 60% of a house, but the "
+             "model is for scoping a decision, not literal ownership)."
+    )
+    property_share_mix = property_share_mix_pct / 100
+
     property_regime = st.selectbox(
         "Negative gearing & CGT regime",
         ["current", "restricted_2027"],
@@ -206,6 +217,7 @@ result = cached_run(
     return_distribution=return_distribution, t_df=t_df,
     loan_rate_distribution=return_distribution,
     loan_rate_t_df=t_df,
+    property_share_mix=property_share_mix,
 )
 
 if display_mode == "today":
@@ -234,6 +246,18 @@ st.caption(
     f"'Succeeds' = both, jointly."
 )
 
+if property_share_mix < 1.0:
+    prop_pct = int(property_share_mix * 100)
+    shr_pct = 100 - prop_pct
+    st.subheader(
+        f"Mix ({prop_pct}% property / {shr_pct}% shares) beats pure shares "
+        f"in **{result['p_mix_beats_pure_shares']:.0%}** of futures."
+    )
+    st.caption(
+        f"Median mixed wealth: ${result['median_mixed_wealth']:,.0f} · "
+        f"P(mix stays solvent): {result['p_mix_solvent']:.0%}"
+    )
+
 # Supporting metrics
 m1, m2, m3, m4 = st.columns(4)
 m1.metric("Median property wealth", f"${result['median_property_wealth']:,.0f}")
@@ -251,6 +275,12 @@ fig.add_trace(go.Histogram(
     x=result["shares_terminal_wealth"], name="Shares",
     opacity=0.6, nbinsx=50,
 ))
+if property_share_mix < 1.0:
+    fig.add_trace(go.Histogram(
+        x=result["mixed_terminal_wealth"],
+        name=f"Mix ({int(property_share_mix*100)}/{int((1-property_share_mix)*100)})",
+        opacity=0.6, nbinsx=50,
+    ))
 fig.update_layout(barmode="overlay", xaxis_title="Terminal wealth ($)", yaxis_title="Trials")
 st.plotly_chart(fig, use_container_width=True)
 

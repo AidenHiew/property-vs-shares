@@ -312,6 +312,120 @@ def test_p_property_succeeds_is_joint_of_wins_and_solvent():
     assert result["p_property_succeeds"] <= result["p_solvent"]
 
 
+def test_property_share_mix_default_is_one_preserves_current_behaviour():
+    """Default mix=1.0 → mixed_terminal exactly equals p_terminal."""
+    result = run_monte_carlo(
+        trials=200, horizon_years=10,
+        purchase_price=700_000, deposit=140_000,
+        stamp_duty=30_000, buying_costs=2_600,
+        loan_rate_mu=0.06, loan_rate_sigma=0.01,
+        gross_yield=0.04,
+        vacancy_weeks_mu=2.0, vacancy_weeks_sigma=1.0,
+        rental_yield_sigma=0.005,
+        property_growth_mu=0.055, property_growth_sigma=0.11,
+        management_fee_pct=0.07, maintenance_pct=0.012,
+        property_age="established_post_2017", asset_type="house",
+        depreciation_override=None,
+        share_return_mu=0.085, share_return_sigma=0.15,
+        portfolio_profile="blended",
+        mode="realistic",
+        margin_loan_rate=0.075, isolate_asset_quality=False,
+        correlation=0.3,
+        mtr=0.37, cpi=0.025, drp=True,
+        serviceability_ceiling=20_000, seed=42,
+    )
+    import numpy as np
+    np.testing.assert_array_equal(
+        result["mixed_terminal_wealth"], result["property_terminal_wealth"]
+    )
+
+
+def test_property_share_mix_zero_is_pure_shares():
+    """mix=0.0 → mixed_terminal exactly equals s_terminal."""
+    result = run_monte_carlo(
+        trials=200, horizon_years=10,
+        purchase_price=700_000, deposit=140_000,
+        stamp_duty=30_000, buying_costs=2_600,
+        loan_rate_mu=0.06, loan_rate_sigma=0.01,
+        gross_yield=0.04,
+        vacancy_weeks_mu=2.0, vacancy_weeks_sigma=1.0,
+        rental_yield_sigma=0.005,
+        property_growth_mu=0.055, property_growth_sigma=0.11,
+        management_fee_pct=0.07, maintenance_pct=0.012,
+        property_age="established_post_2017", asset_type="house",
+        depreciation_override=None,
+        share_return_mu=0.085, share_return_sigma=0.15,
+        portfolio_profile="blended",
+        mode="realistic",
+        margin_loan_rate=0.075, isolate_asset_quality=False,
+        correlation=0.3,
+        mtr=0.37, cpi=0.025, drp=True,
+        serviceability_ceiling=20_000, seed=42,
+        property_share_mix=0.0,
+    )
+    import numpy as np
+    np.testing.assert_array_equal(
+        result["mixed_terminal_wealth"], result["shares_terminal_wealth"]
+    )
+
+
+def test_property_share_mix_60_40_is_weighted_average():
+    """At mix=0.6, mixed = 0.6*property + 0.4*shares trial-by-trial."""
+    result = run_monte_carlo(
+        trials=200, horizon_years=10,
+        purchase_price=700_000, deposit=140_000,
+        stamp_duty=30_000, buying_costs=2_600,
+        loan_rate_mu=0.06, loan_rate_sigma=0.01,
+        gross_yield=0.04,
+        vacancy_weeks_mu=2.0, vacancy_weeks_sigma=1.0,
+        rental_yield_sigma=0.005,
+        property_growth_mu=0.055, property_growth_sigma=0.11,
+        management_fee_pct=0.07, maintenance_pct=0.012,
+        property_age="established_post_2017", asset_type="house",
+        depreciation_override=None,
+        share_return_mu=0.085, share_return_sigma=0.15,
+        portfolio_profile="blended",
+        mode="realistic",
+        margin_loan_rate=0.075, isolate_asset_quality=False,
+        correlation=0.3,
+        mtr=0.37, cpi=0.025, drp=True,
+        serviceability_ceiling=20_000, seed=42,
+        property_share_mix=0.6,
+    )
+    import numpy as np
+    expected = 0.6 * result["property_terminal_wealth"] + 0.4 * result["shares_terminal_wealth"]
+    np.testing.assert_array_almost_equal(result["mixed_terminal_wealth"], expected)
+
+
+def test_p_mix_metrics_in_valid_range():
+    """p_mix_beats_pure_shares and p_mix_solvent are probabilities in [0,1]."""
+    result = run_monte_carlo(
+        trials=200, horizon_years=10,
+        purchase_price=700_000, deposit=140_000,
+        stamp_duty=30_000, buying_costs=2_600,
+        loan_rate_mu=0.06, loan_rate_sigma=0.01,
+        gross_yield=0.04,
+        vacancy_weeks_mu=2.0, vacancy_weeks_sigma=1.0,
+        rental_yield_sigma=0.005,
+        property_growth_mu=0.055, property_growth_sigma=0.11,
+        management_fee_pct=0.07, maintenance_pct=0.012,
+        property_age="established_post_2017", asset_type="house",
+        depreciation_override=None,
+        share_return_mu=0.085, share_return_sigma=0.15,
+        portfolio_profile="blended",
+        mode="realistic",
+        margin_loan_rate=0.075, isolate_asset_quality=False,
+        correlation=0.3,
+        mtr=0.37, cpi=0.025, drp=True,
+        serviceability_ceiling=20_000, seed=42,
+        property_share_mix=0.6,
+    )
+    assert 0 <= result["p_mix_beats_pure_shares"] <= 1
+    assert 0 <= result["p_mix_solvent"] <= 1
+    # At mix=0.6, mix should be solvent more often than pure property (less outside cash)
+    assert result["p_mix_solvent"] >= result["p_solvent"]
+
+
 def test_loan_rate_path_uncorrelated_with_return_paths():
     """After dual-seed fix, loan_rate draws should be uncorrelated with property/share
     return draws (correlation < 0.05 at N=5000). Pre-fix this was ~0.004 by coincidence

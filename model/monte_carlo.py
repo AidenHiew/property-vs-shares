@@ -97,6 +97,9 @@ def run_monte_carlo(
     t_df: int = 5,
     loan_rate_distribution: str = "gaussian",
     loan_rate_t_df: int = 5,
+    # Allocation mix: 1.0 = 100% property (default, preserves current behaviour),
+    # 0.0 = 100% shares, anything in between is a per-trial weighted blend.
+    property_share_mix: float = 1.0,
 ):
     """Run the full Monte Carlo simulation. Returns aggregated outputs."""
     rng = np.random.default_rng(seed)
@@ -182,6 +185,12 @@ def run_monte_carlo(
 
     forced_flags = flag_forced_sales(p_outside_cash, serviceability_ceiling)
 
+    # Allocation mix computation
+    mix = property_share_mix
+    mixed_terminal = mix * p_terminal + (1 - mix) * s_terminal
+    mixed_outside_cash = mix * p_outside_cash  # only property has outside cash demand; mix scales it
+    mixed_forced_flags = flag_forced_sales(mixed_outside_cash, serviceability_ceiling)
+
     return {
         "property_terminal_wealth": p_terminal,
         "shares_terminal_wealth": s_terminal,
@@ -196,4 +205,11 @@ def run_monte_carlo(
             ((p_terminal > s_terminal) & (forced_flags == 0)).mean()
         ),
         "forced_sale_flags": forced_flags,
+        "mixed_terminal_wealth": mixed_terminal,
+        "median_mixed_wealth": float(np.median(mixed_terminal)),
+        "p_mix_beats_pure_shares": float(
+            ((mixed_terminal > s_terminal) & (mixed_forced_flags == 0)).mean()
+        ),
+        "p_mix_solvent": float(1 - mixed_forced_flags.mean()),
+        "mixed_outside_cash_per_trial_year": mixed_outside_cash,
     }
