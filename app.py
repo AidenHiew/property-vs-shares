@@ -152,6 +152,14 @@ if property_regime == "restricted_2027":
         "**announcement-only** (not yet legislated). Model assumes no other residential "
         "property income offsetting the loss pool."
     )
+    if property_age == "new_build":
+        st.warning(
+            "⚠ **New-build × restricted regime mismatch.** Under the Budget 2026-27 announcement, "
+            "**new builds retain full negative gearing** (and can elect either CGT method at sale) — "
+            "but this model's regime toggle is global and currently applies NG quarantining to all "
+            "property ages. For a new build, switch the regime to **'Current rules'** to get the "
+            "correct treatment. (Captured as BACKLOG v1.2 — auto-couple new_build → current.)"
+        )
 
 # Symmetric reinvestment banner
 st.warning(

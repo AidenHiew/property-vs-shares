@@ -101,11 +101,14 @@ def run_monte_carlo(
     """Run the full Monte Carlo simulation. Returns aggregated outputs."""
     rng = np.random.default_rng(seed)
 
+    # Pass seed+1 to decorrelate the return-paths RNG from the outer loan_rate/vacancy RNG.
+    # Both were previously seeded identically; empirically the spurious correlation was
+    # negligible (~0.004) but it's a latent defect. See BACKLOG §Bugs §2.
     paths = generate_correlated_paths(
         trials=trials, horizon=horizon_years,
         property_mu=property_growth_mu, property_sigma=property_growth_sigma,
         share_mu=share_return_mu, share_sigma=share_return_sigma,
-        correlation=correlation, seed=seed,
+        correlation=correlation, seed=seed + 1,
         return_distribution=return_distribution, t_df=t_df,
     )
 

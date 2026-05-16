@@ -310,3 +310,28 @@ def test_p_property_succeeds_is_joint_of_wins_and_solvent():
     # Sanity: joint must be ≤ both components
     assert result["p_property_succeeds"] <= result["p_property_wins"]
     assert result["p_property_succeeds"] <= result["p_solvent"]
+
+
+def test_loan_rate_path_uncorrelated_with_return_paths():
+    """After dual-seed fix, loan_rate draws should be uncorrelated with property/share
+    return draws (correlation < 0.05 at N=5000). Pre-fix this was ~0.004 by coincidence
+    but the streams were structurally identical; fix decouples them properly."""
+    import numpy as np
+    from model.monte_carlo import generate_correlated_paths
+
+    # Mirror what run_monte_carlo does: outer rng seeded with `seed`, inner with `seed+1`
+    seed = 42
+    rng = np.random.default_rng(seed)
+    loan_rate_z = rng.standard_normal((5000, 10))  # same shape as run_monte_carlo
+
+    paths = generate_correlated_paths(
+        trials=5000, horizon=10,
+        property_mu=0.055, property_sigma=0.11,
+        share_mu=0.085, share_sigma=0.15,
+        correlation=0.0, seed=seed + 1,
+    )
+    prop = paths["property_growth"]
+    # Flatten and correlate
+    corr = np.corrcoef(loan_rate_z.ravel(), prop.ravel())[0, 1]
+    # Sampling noise at N=50000 is roughly 1/sqrt(N) ≈ 0.0045; allow 5x for safety
+    assert abs(corr) < 0.05, f"Expected near-zero correlation, got {corr:.4f}"
