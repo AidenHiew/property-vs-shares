@@ -7,6 +7,235 @@ from model.monte_carlo import run_monte_carlo
 from model.tax import sa_stamp_duty
 from model.normalisation import PORTFOLIO_PROFILES
 
+
+# --------------- Persona sweep helpers ---------------
+
+@st.cache_data(show_spinner="Computing allocation recommendations...")
+def compute_persona_sweep(**kwargs):
+    """Run mix sweep at 11 points × 2000 trials. Returns list of dicts per mix point."""
+    rows = []
+    for mix_pct in range(0, 101, 10):
+        r = run_monte_carlo(**{**kwargs, "property_share_mix": mix_pct / 100, "trials": 2000})
+        rows.append({
+            "mix_pct": mix_pct,
+            "median_wealth": r["median_mixed_wealth"],
+            "p_solvent": r["p_mix_solvent"],
+            "worst_year_cash": float(np.percentile(r["mixed_outside_cash_per_trial_year"].max(axis=1), 90)),
+            "p_beats_shares": r["p_mix_beats_pure_shares"],
+        })
+    return rows
+
+
+PERSONA_DEFS = [
+    ("Safe Player",      0.99, "I want a near-certainty of staying within my cash ceiling — even if it costs me some wealth."),
+    ("Balanced",         0.95, "I want very high safety, but I'll accept a small chance of cashflow stress for more wealth."),
+    ("Wealth Maximizer", 0.85, "I'll accept real risk of forced sale (~1 in 7 futures) in exchange for the highest wealth."),
+]
+
+
+def find_optimal_mix(rows, min_p_solvent):
+    safe = [r for r in rows if r["p_solvent"] >= min_p_solvent]
+    if not safe:
+        return None  # caller handles
+    return max(safe, key=lambda r: r["median_wealth"])
+
+
+def _fmt_money(x):
+    if x >= 1_000_000:
+        return f"${x/1_000_000:.2f}M"
+    elif x >= 1_000:
+        return f"${x/1_000:.0f}k"
+    return f"${x:.0f}"
+
+
+def _fmt_pct(x):
+    return f"{x*100:.1f}%"
+
+
+def _card_css():
+    return """
+    .cards-container {
+        display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 12px;
+    }
+    .card-rec {
+        background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 24px;
+        position: relative; box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .card-rec.recommended { border: 2px solid #16a34a; }
+    .recommended-badge {
+        background: #16a34a; color: white; font-size: 11px; font-weight: 600;
+        padding: 4px 10px; border-radius: 12px; display: inline-block; margin-bottom: 12px;
+        letter-spacing: 0.3px;
+    }
+    .persona-name {
+        font-size: 12px; font-weight: 600; color: #6b7280;
+        text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;
+    }
+    .persona-threshold { font-size: 11px; color: #9ca3af; margin-bottom: 14px; font-weight: 500; }
+    .allocation { font-size: 28px; font-weight: 700; color: #1a1a1a; line-height: 1.1; }
+    .allocation-sub { font-size: 13px; color: #6b7280; margin-top: 2px; }
+    .divider { height: 1px; background: #e5e7eb; margin: 16px 0; }
+    .metric { margin-bottom: 10px; }
+    .metric-label { font-size: 12px; color: #6b7280; margin-bottom: 2px; }
+    .metric-value { font-size: 17px; font-weight: 600; color: #1a1a1a; }
+    .blurb { font-size: 12px; color: #4b5563; font-style: italic; margin: 10px 0 0 0; }
+    """
+
+
+def _three_cards_html(resolved, safe_player_failed):
+    """Build the 3-card grid HTML."""
+    cards_html = ""
+    for i, p in enumerate(resolved):
+        name = p["name"]
+        threshold = p["threshold"]
+        blurb = p["blurb"]
+        row = p["row"]
+        is_recommended = (name == "Balanced")
+        badge = '<div class="recommended-badge">★ Recommended</div>' if is_recommended else ''
+        card_class = "card-rec recommended" if is_recommended else "card-rec"
+
+        if i == 0 and safe_player_failed:
+            cards_html += f"""
+            <div class="{card_class}">
+                {badge}
+                <div class="persona-name">{name}</div>
+                <div class="persona-threshold">Safety appetite: ≥{int(threshold*100)}% safe</div>
+                <div class="allocation" style="font-size:18px;color:#dc2626;">Unreachable</div>
+                <div class="divider"></div>
+                <p class="blurb">No allocation reaches ≥{int(threshold*100)}% safety under your inputs.
+                Try raising your serviceability ceiling or lowering MTR.</p>
+            </div>
+            """
+            continue
+
+        if row is None:
+            continue
+
+        mix_pct = row["mix_pct"]
+        cards_html += f"""
+        <div class="{card_class}">
+            {badge}
+            <div class="persona-name">{name}</div>
+            <div class="persona-threshold">Safety appetite: ≥{int(threshold*100)}% safe</div>
+            <div class="allocation">{mix_pct}% property</div>
+            <div class="allocation-sub">{100-mix_pct}% shares</div>
+            <div class="divider"></div>
+            <div class="metric">
+                <div class="metric-label">Typical wealth in 25 years</div>
+                <div class="metric-value">{_fmt_money(row['median_wealth'])}</div>
+            </div>
+            <div class="metric">
+                <div class="metric-label">Chance never runs out of cash</div>
+                <div class="metric-value">{_fmt_pct(row['p_solvent'])}</div>
+            </div>
+            <div class="metric">
+                <div class="metric-label">Worst year cash demand</div>
+                <div class="metric-value">{_fmt_money(row['worst_year_cash'])}</div>
+            </div>
+            <div class="divider"></div>
+            <p class="blurb">"{blurb}"</p>
+        </div>
+        """
+
+    return f"""
+    <style>
+        {_card_css()}
+    </style>
+    <div class="cards-container">
+        {cards_html}
+    </div>
+    """
+
+
+def _merged_card_html(row):
+    """Single card shown when all 3 safety thresholds resolve to the same mix."""
+    mix_pct = row["mix_pct"]
+    return f"""
+    <style>{_card_css()}</style>
+    <div class="cards-container" style="grid-template-columns:1fr;max-width:600px;margin:0 auto;">
+        <div class="card-rec recommended">
+            <div class="recommended-badge">★ Recommended</div>
+            <div class="persona-name">Optimal allocation</div>
+            <div class="allocation">{mix_pct}% property</div>
+            <div class="allocation-sub">{100-mix_pct}% shares</div>
+            <div class="divider"></div>
+            <div class="metric">
+                <div class="metric-label">Typical wealth in 25 years</div>
+                <div class="metric-value">{_fmt_money(row['median_wealth'])}</div>
+            </div>
+            <div class="metric">
+                <div class="metric-label">Chance never runs out of cash</div>
+                <div class="metric-value">{_fmt_pct(row['p_solvent'])}</div>
+            </div>
+            <div class="divider"></div>
+            <p class="blurb">"All three safety thresholds (≥99%, ≥95%, ≥85%) point to the same allocation under your current inputs — pick this with confidence."</p>
+        </div>
+    </div>
+    """
+
+
+def render_persona_cards(rows):
+    """Render the 3 persona cards as styled HTML via st.markdown.
+    Handles merge case (all 3 resolve to same mix) and impossible case (no ≥99% safe)."""
+    resolved = []
+    for name, threshold, blurb in PERSONA_DEFS:
+        opt = find_optimal_mix(rows, threshold)
+        resolved.append({"name": name, "threshold": threshold, "blurb": blurb, "row": opt})
+
+    safe_player_failed = resolved[0]["row"] is None
+
+    if not safe_player_failed:
+        mix_pcts = {p["row"]["mix_pct"] for p in resolved}
+        if len(mix_pcts) == 1:
+            single_mix = resolved[1]["row"]
+            html = _merged_card_html(single_mix)
+            st.markdown(html, unsafe_allow_html=True)
+            return
+
+    html = _three_cards_html(resolved, safe_player_failed)
+    st.markdown(html, unsafe_allow_html=True)
+
+
+def render_comparison_table(rows, recommended_mix):
+    """Render the comparison table as styled HTML inside an expander."""
+    table_rows_html = ""
+    for row in rows:
+        is_rec = row["mix_pct"] == recommended_mix
+        row_class = "table-row-rec" if is_rec else ""
+        star = ' <span style="color:#16a34a;">★</span>' if is_rec else ""
+        table_rows_html += f"""
+        <tr class="{row_class}">
+            <td>{row['mix_pct']}%{star}</td>
+            <td>{_fmt_money(row['median_wealth'])}</td>
+            <td>{_fmt_pct(row['p_solvent'])}</td>
+            <td>{_fmt_money(row['worst_year_cash'])}</td>
+            <td>{_fmt_pct(row['p_beats_shares'])}</td>
+        </tr>
+        """
+    html = f"""
+    <style>
+        .table-rec {{ width: 100%; border-collapse: collapse; font-size: 14px;
+            background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;}}
+        .table-rec thead {{ background: #f9fafb; }}
+        .table-rec th {{ text-align: left; padding: 12px 16px; font-weight: 600;
+            color: #374151; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;
+            border-bottom: 2px solid #e5e7eb;}}
+        .table-rec td {{ padding: 12px 16px; border-bottom: 1px solid #f3f4f6; color: #1a1a1a;}}
+        .table-rec tr:last-child td {{ border-bottom: none; }}
+        .table-rec .table-row-rec {{ background: #f0fdf4; font-weight: 600; }}
+        .table-rec .table-row-rec td {{ color: #15803d; }}
+    </style>
+    <table class="table-rec">
+        <thead><tr>
+            <th>Property mix</th><th>Typical wealth (25y)</th>
+            <th>Chance never runs out of cash</th><th>Worst year cash</th>
+            <th>Beats pure shares</th>
+        </tr></thead>
+        <tbody>{table_rows_html}</tbody>
+    </table>
+    """
+    st.markdown(html, unsafe_allow_html=True)
+
 st.set_page_config(page_title="Property vs Shares", layout="wide")
 
 st.title("Property vs Shares — your scenario")
@@ -276,6 +505,41 @@ if display_mode == "today":
         result["mixed_outside_cash_per_trial_year"] / yearly_deflator
     )
 
+# --------------- Persona sweep + recommendation section ---------------
+sweep_kwargs = dict(
+    horizon_years=horizon, purchase_price=purchase_price, deposit=deposit,
+    stamp_duty=stamp_duty, buying_costs=buying_costs,
+    loan_rate_mu=loan_rate, loan_rate_sigma=loan_rate_sigma,
+    gross_yield=gross_yield,
+    vacancy_weeks_mu=vacancy_weeks, vacancy_weeks_sigma=vacancy_weeks_sigma,
+    rental_yield_sigma=rental_yield_sigma,
+    property_growth_mu=property_growth_mu, property_growth_sigma=property_growth_sigma,
+    share_return_mu=share_return_mu, share_return_sigma=share_return_sigma,
+    management_fee_pct=management_fee_pct, maintenance_pct=maintenance_pct,
+    property_age=property_age, asset_type=asset_type,
+    depreciation_override=depreciation_override,
+    property_regime=effective_property_regime,
+    portfolio_profile=portfolio_profile, mode=mode,
+    margin_loan_rate=margin_loan_rate, isolate_asset_quality=isolate_asset_quality,
+    correlation=correlation, mtr=mtr, cpi=cpi, drp=True,
+    serviceability_ceiling=max_top_up, seed=42,
+    return_distribution=return_distribution, t_df=t_df,
+    loan_rate_distribution=return_distribution, loan_rate_t_df=t_df,
+)
+
+st.subheader("Recommended allocation for your scenario")
+st.caption(
+    "Pick your safety appetite below — the optimizer figures out the allocation. "
+    "Want to override? Adjust the 'Property share of allocation' slider in the sidebar."
+)
+sweep_rows = compute_persona_sweep(**sweep_kwargs)
+render_persona_cards(sweep_rows)
+
+balanced_row = find_optimal_mix(sweep_rows, 0.95)
+recommended_mix_for_table = balanced_row["mix_pct"] if balanced_row else None
+
+st.markdown("---")
+
 # Headline
 st.header(
     f"Property **succeeds** for you in **{result['p_property_succeeds']:.0%}** "
@@ -306,41 +570,45 @@ m2.metric("Median shares wealth", f"${result['median_shares_wealth']:,.0f}")
 m3.metric("Worst-year cash needed", f"${result['worst_year_cash']:,.0f}")
 m4.metric("P(strategy stays solvent)", f"{result['p_solvent']:.0%}")
 
-st.subheader("Terminal wealth distribution")
-fig = go.Figure()
-fig.add_trace(go.Histogram(
-    x=result["property_terminal_wealth"], name="Property",
-    opacity=0.6, nbinsx=50,
-))
-fig.add_trace(go.Histogram(
-    x=result["shares_terminal_wealth"], name="Shares",
-    opacity=0.6, nbinsx=50,
-))
-if property_share_mix < 1.0:
+with st.expander("▾ Compare all allocations (table)"):
+    render_comparison_table(sweep_rows, recommended_mix_for_table)
+
+with st.expander("▾ Show distributions and cashflow detail"):
+    st.subheader("Terminal wealth distribution")
+    fig = go.Figure()
     fig.add_trace(go.Histogram(
-        x=result["mixed_terminal_wealth"],
-        name=f"Mix ({int(property_share_mix*100)}/{int((1-property_share_mix)*100)})",
+        x=result["property_terminal_wealth"], name="Property",
         opacity=0.6, nbinsx=50,
     ))
-fig.update_layout(barmode="overlay", xaxis_title="Terminal wealth ($)", yaxis_title="Trials")
-st.plotly_chart(fig, use_container_width=True)
+    fig.add_trace(go.Histogram(
+        x=result["shares_terminal_wealth"], name="Shares",
+        opacity=0.6, nbinsx=50,
+    ))
+    if property_share_mix < 1.0:
+        fig.add_trace(go.Histogram(
+            x=result["mixed_terminal_wealth"],
+            name=f"Mix ({int(property_share_mix*100)}/{int((1-property_share_mix)*100)})",
+            opacity=0.6, nbinsx=50,
+        ))
+    fig.update_layout(barmode="overlay", xaxis_title="Terminal wealth ($)", yaxis_title="Trials")
+    st.plotly_chart(fig, use_container_width=True)
 
-st.subheader("Cashflow stress")
-years = np.arange(1, horizon + 1)
-median_cashflow = np.median(result["outside_cash_per_trial_year"], axis=0)
-p90_cashflow = np.percentile(result["outside_cash_per_trial_year"], 90, axis=0)
-p10_cashflow = np.percentile(result["outside_cash_per_trial_year"], 10, axis=0)
+    st.subheader("Cashflow stress")
+    years = np.arange(1, horizon + 1)
+    median_cashflow = np.median(result["outside_cash_per_trial_year"], axis=0)
+    p90_cashflow = np.percentile(result["outside_cash_per_trial_year"], 90, axis=0)
+    p10_cashflow = np.percentile(result["outside_cash_per_trial_year"], 10, axis=0)
 
-fig2 = go.Figure()
-fig2.add_trace(go.Scatter(x=years, y=median_cashflow, mode="lines", name="Median"))
-fig2.add_trace(go.Scatter(x=years, y=p90_cashflow, mode="lines", name="90th %ile (worst)",
-                          line=dict(dash="dot")))
-fig2.add_trace(go.Scatter(x=years, y=p10_cashflow, mode="lines", name="10th %ile (best)",
-                          line=dict(dash="dot")))
-fig2.add_hline(y=max_top_up, line_dash="dash", line_color="red",
-               annotation_text=f"Your serviceability ceiling: ${max_top_up:,}")
-fig2.update_layout(xaxis_title="Year", yaxis_title="Annual out-of-pocket cash ($)")
-st.plotly_chart(fig2, use_container_width=True)
+    fig2 = go.Figure()
+    fig2.add_trace(go.Scatter(x=years, y=median_cashflow, mode="lines", name="Median"))
+    fig2.add_trace(go.Scatter(x=years, y=p90_cashflow, mode="lines", name="90th %ile (worst)",
+                              line=dict(dash="dot")))
+    fig2.add_trace(go.Scatter(x=years, y=p10_cashflow, mode="lines", name="10th %ile (best)",
+                              line=dict(dash="dot")))
+    fig2.add_hline(y=max_top_up, line_dash="dash", line_color="red",
+                   annotation_text=f"Your serviceability ceiling: ${max_top_up:,}")
+    fig2.update_layout(xaxis_title="Year", yaxis_title="Annual out-of-pocket cash ($)")
+    st.plotly_chart(fig2, use_container_width=True)
 
 with st.expander("Assumptions used in this run", expanded=False):
     st.markdown(f"""
