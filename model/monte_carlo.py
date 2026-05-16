@@ -168,5 +168,8 @@ def run_monte_carlo(
         "median_property_wealth": float(np.median(p_terminal)),
         "median_shares_wealth": float(np.median(s_terminal)),
         "p_solvent": float(1 - forced_flags.mean()),
+        "p_property_succeeds": float(
+            ((p_terminal > s_terminal) & (forced_flags == 0)).mean()
+        ),
         "forced_sale_flags": forced_flags,
     }

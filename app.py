@@ -189,7 +189,15 @@ if display_mode == "today":
     result["worst_year_cash"] = result["worst_year_cash"] / deflator  # rough; use horizon's deflator
 
 # Headline
-st.header(f"Property beats shares in **{result['p_property_wins']:.0%}** of 5,000 simulated futures over {horizon} years.")
+st.header(
+    f"Property **succeeds** for you in **{result['p_property_succeeds']:.0%}** "
+    f"of {result['property_terminal_wealth'].size:,} simulated {horizon}-year futures."
+)
+st.caption(
+    f"Property beats shares in {result['p_property_wins']:.0%} of trials, "
+    f"but only {result['p_solvent']:.0%} stay within your ${max_top_up:,} serviceability ceiling. "
+    f"'Succeeds' = both, jointly."
+)
 
 # Supporting metrics
 m1, m2, m3, m4 = st.columns(4)
