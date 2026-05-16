@@ -12,15 +12,23 @@ def generate_correlated_paths(
     share_sigma: float,
     correlation: float,
     seed: int = 42,
+    return_distribution: str = "gaussian",
+    t_df: int = 5,
 ) -> Dict[str, np.ndarray]:
-    """Return correlated normal draws for property capital growth and share total return.
+    """Return correlated draws for property capital growth and share total return.
 
     Uses Cholesky decomposition to introduce the target correlation.
 
     Returns dict with 'property_growth' and 'share_return' as (trials, horizon) arrays.
     """
     rng = np.random.default_rng(seed)
-    z = rng.standard_normal((trials, horizon, 2))
+    if return_distribution == "gaussian":
+        z = rng.standard_normal((trials, horizon, 2))
+    elif return_distribution == "student_t":
+        raw = rng.standard_t(t_df, size=(trials, horizon, 2))
+        z = raw * np.sqrt((t_df - 2) / t_df)  # rescale so realized σ = 1
+    else:
+        raise ValueError(f"unknown return_distribution: {return_distribution}")
 
     # Cholesky factor for 2x2 corr matrix [[1, rho], [rho, 1]]
     L = np.array([[1.0, 0.0], [correlation, np.sqrt(1 - correlation ** 2)]])
@@ -85,6 +93,8 @@ def run_monte_carlo(
     seed: int = 42,
     # Federal Budget 2026-27 regime — kwarg with default for backward compat
     property_regime: str = "current",
+    return_distribution: str = "gaussian",
+    t_df: int = 5,
 ):
     """Run the full Monte Carlo simulation. Returns aggregated outputs."""
     rng = np.random.default_rng(seed)
@@ -94,6 +104,7 @@ def run_monte_carlo(
         property_mu=property_growth_mu, property_sigma=property_growth_sigma,
         share_mu=share_return_mu, share_sigma=share_return_sigma,
         correlation=correlation, seed=seed,
+        return_distribution=return_distribution, t_df=t_df,
     )
 
     loan_rate_paths = loan_rate_mu + loan_rate_sigma * rng.standard_normal((trials, horizon_years))

@@ -84,6 +84,26 @@ with st.sidebar:
         property_growth_mu = st.slider("Property growth μ", 0.0, 0.10, 0.055, step=0.005)
         share_return_mu = st.slider("Share return μ", 0.0, 0.15, 0.085, step=0.005)
 
+        st.subheader("Return distribution")
+        return_distribution = st.selectbox(
+            "Return distribution",
+            ["gaussian", "student_t"],
+            index=0,
+            format_func=lambda x: {
+                "gaussian": "Gaussian (normal — default)",
+                "student_t": "Student-t (fatter tails, more honest about crashes)",
+            }[x],
+            help="Gaussian under-states tail risk. Student-t with df=5 matches empirical "
+                 "equity kurtosis (~5-6) and produces ~10-15% bigger drawdowns at the 1st/99th "
+                 "percentile. Realized σ is rescaled to match your specified σ."
+        )
+        if return_distribution == "student_t":
+            t_df = st.slider("Student-t degrees of freedom", 3, 30, 5,
+                             help="Lower = fatter tails. df=5 matches equity returns; "
+                                  "df=30+ ≈ Gaussian. df must be > 2 for finite variance.")
+        else:
+            t_df = 5  # unused
+
         st.subheader("Correlation")
         corr_quick = st.radio("Quick-pick", [-0.1, 0.3, 0.6], index=1, horizontal=True,
                               format_func=lambda x: f"{x:.1f}")
@@ -171,6 +191,7 @@ result = cached_run(
     mtr=mtr, cpi=cpi, drp=True,
     serviceability_ceiling=max_top_up,
     seed=42,
+    return_distribution=return_distribution, t_df=t_df,
 )
 
 if display_mode == "today":

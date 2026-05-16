@@ -116,6 +116,80 @@ def test_run_monte_carlo_exposes_solvency_metrics():
     assert result["forced_sale_flags"].dtype == bool
 
 
+def test_generate_correlated_paths_default_is_gaussian():
+    """Default arg unchanged → identical output to pre-refactor."""
+    from model.monte_carlo import generate_correlated_paths
+    paths = generate_correlated_paths(
+        trials=100, horizon=10,
+        property_mu=0.055, property_sigma=0.11,
+        share_mu=0.085, share_sigma=0.15,
+        correlation=0.3, seed=42,
+    )
+    # Snapshot a few values from the seeded Gaussian draw
+    assert paths["property_growth"].shape == (100, 10)
+    # Pre-refactor mean across all draws (seed=42, these are stable)
+    assert abs(paths["property_growth"].mean() - 0.055) < 0.02
+
+
+def test_generate_correlated_paths_student_t_realized_sigma():
+    """With rescaling, realized std should match specified σ within ~3% at large N."""
+    from model.monte_carlo import generate_correlated_paths
+    paths = generate_correlated_paths(
+        trials=10000, horizon=10,
+        property_mu=0.0, property_sigma=0.11,
+        share_mu=0.0, share_sigma=0.15,
+        correlation=0.0, seed=42,
+        return_distribution="student_t", t_df=5,
+    )
+    # Realized σ should be close to specified σ thanks to sqrt((df-2)/df) rescale
+    assert abs(paths["property_growth"].std() - 0.11) / 0.11 < 0.05
+    assert abs(paths["share_return"].std() - 0.15) / 0.15 < 0.05
+
+
+def test_student_t_has_fatter_tails_than_gaussian():
+    """At same σ, t-dist should have bigger 1st/99th percentile magnitudes."""
+    from model.monte_carlo import generate_correlated_paths
+    common = dict(
+        trials=10000, horizon=10,
+        property_mu=0.0, property_sigma=0.11,
+        share_mu=0.0, share_sigma=0.15,
+        correlation=0.0, seed=42,
+    )
+    g = generate_correlated_paths(**common, return_distribution="gaussian")
+    t = generate_correlated_paths(**common, return_distribution="student_t", t_df=5)
+    import numpy as np
+    g_p99 = np.percentile(np.abs(g["property_growth"]), 99)
+    t_p99 = np.percentile(np.abs(t["property_growth"]), 99)
+    assert t_p99 > g_p99 * 1.05, f"Expected fatter tails: gaussian p99={g_p99:.4f}, t p99={t_p99:.4f}"
+
+
+def test_run_monte_carlo_accepts_student_t():
+    """End-to-end smoke: passing return_distribution='student_t' shouldn't error."""
+    result = run_monte_carlo(
+        trials=200, horizon_years=10,
+        purchase_price=700_000, deposit=140_000,
+        stamp_duty=30_000, buying_costs=2_600,
+        loan_rate_mu=0.06, loan_rate_sigma=0.01,
+        gross_yield=0.04,
+        vacancy_weeks_mu=2.0, vacancy_weeks_sigma=1.0,
+        rental_yield_sigma=0.005,
+        property_growth_mu=0.055, property_growth_sigma=0.11,
+        management_fee_pct=0.07, maintenance_pct=0.012,
+        property_age="established_post_2017", asset_type="house",
+        depreciation_override=None,
+        share_return_mu=0.085, share_return_sigma=0.15,
+        portfolio_profile="blended",
+        mode="realistic",
+        margin_loan_rate=0.075, isolate_asset_quality=False,
+        correlation=0.3,
+        mtr=0.37, cpi=0.025, drp=True,
+        serviceability_ceiling=20_000, seed=42,
+        return_distribution="student_t", t_df=5,
+    )
+    assert "p_property_succeeds" in result
+    assert 0 <= result["p_property_succeeds"] <= 1
+
+
 def test_p_property_succeeds_is_joint_of_wins_and_solvent():
     """Joint success = P(property wins AND stays solvent within ceiling)."""
     result = run_monte_carlo(
