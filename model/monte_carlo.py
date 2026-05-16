@@ -52,7 +52,7 @@ from model.normalisation import (
     build_shares_inputs_for_mode_b,
     PORTFOLIO_PROFILES,
 )
-from model.solvency import flag_forced_sales, p_solvent
+from model.solvency import flag_forced_sales
 
 
 def run_monte_carlo(
@@ -200,7 +200,11 @@ def run_monte_carlo(
         "worst_year_cash": float(np.percentile(p_outside_cash.max(axis=1), 90)),
         "median_property_wealth": float(np.median(p_terminal)),
         "median_shares_wealth": float(np.median(s_terminal)),
-        "p_solvent": p_solvent(p_outside_cash, serviceability_ceiling),
+        # Note: model/solvency.py:p_solvent exists but takes (cash_array, ceiling) and re-runs
+        # flag_forced_sales internally. Since we already computed forced_flags above, deriving
+        # p_solvent inline avoids a redundant vectorised pass. The helper is still available
+        # for callers that don't already have flags computed.
+        "p_solvent": float(1 - forced_flags.mean()),
         "p_property_succeeds": float(
             ((p_terminal > s_terminal) & (forced_flags == 0)).mean()
         ),

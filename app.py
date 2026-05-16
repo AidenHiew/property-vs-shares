@@ -263,7 +263,18 @@ if display_mode == "today":
     # Outside cash is per-year; deflate each year by its own deflator
     yearly_deflator = (1 + cpi) ** np.arange(1, horizon + 1)
     result["outside_cash_per_trial_year"] = result["outside_cash_per_trial_year"] / yearly_deflator
-    result["worst_year_cash"] = result["worst_year_cash"] / deflator  # rough; use horizon's deflator
+    # worst_year_cash: recompute from the already-correctly-deflated per-year array
+    # (the previous `worst_year_cash / deflator` used horizon's deflator regardless of
+    # which year was actually worst — error up to ~80% of full deflator for early-horizon
+    # worst years).
+    result["worst_year_cash"] = float(
+        np.percentile(result["outside_cash_per_trial_year"].max(axis=1), 90)
+    )
+    result["mixed_terminal_wealth"] = result["mixed_terminal_wealth"] / deflator
+    result["median_mixed_wealth"] = result["median_mixed_wealth"] / deflator
+    result["mixed_outside_cash_per_trial_year"] = (
+        result["mixed_outside_cash_per_trial_year"] / yearly_deflator
+    )
 
 # Headline
 st.header(
