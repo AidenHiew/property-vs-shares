@@ -6,10 +6,10 @@ a real allocation decision a second time.
 
 ## Pickup notes (when resuming)
 
-**Last touched: 2026-05-16, late evening session.** Working tree clean, 86/86 tests passing.
-All v1.1 bugs + 3 of 4 finance-expert recommendations + 2 of 3 surfaced-during-sensitivity items
-shipped. Only `worst_year_cash` deflation precision and the allocation-mix architectural piece
-remain.
+**Last touched: 2026-05-16, very late evening session.** Working tree clean, 90/90 tests passing.
+All v1.1 bugs + ALL 4 finance-expert recommendations + 2 of 3 surfaced-during-sensitivity items
+shipped (the third is the property-age auto-couple, partially mitigated by warning banner).
+Only `worst_year_cash` deflation precision (small) and larger v1.2 features remain.
 
 ### What landed across the 2026-05-16 sessions (10 commits)
 
@@ -54,25 +54,26 @@ Later (evening 2):
 
 ### Remaining items (in decision-relevance order)
 
-- **Allocation-mix slider (architectural).** Needs Opus design conversation before any code.
-  Captured below under "Surfaced …" → "Allocation-mix framing".
 - **Property-age × regime auto-coupling** (currently just a warning banner). Auto-set regime
   to `current` when `property_age == "new_build"` with override option. v1.2 candidate.
 - **`worst_year_cash` deflation** (BACKLOG §Polish §2). Approximate; only fix if the
   number ever feels off.
+- **Larger v1.2 features**: Mode B margin-call modelling, single-property idiosyncratic
+  risk shocks, capex events, offset account, other states. All bigger commitments —
+  brainstorm scope before plunging in.
 
 ### Setup commands
 
 ```bash
 cd "/Users/aidenmacmini/AI Project/Financial Modeling/property-vs-shares"
 source .venv/bin/activate
-PYTHONPATH=. pytest -q              # expect 86 passed
+PYTHONPATH=. pytest -q              # expect 90 passed
 PYTHONPATH=. python notebooks/scenario_sweep.py   # full regime × dial sweep
 PYTHONPATH=. python notebooks/tornado.py          # sensitivity ranking (4 tables)
 streamlit run app.py                # launch UI
 ```
 
-Last meaningful commit on `main`: `42f8135 chore: hide unused rental_yield_sigma slider + p_solvent dedup`
+Last meaningful commit on `main`: `493c27e feat(monte-carlo): wealth-level allocation mix slider`
 
 ## Bugs / correctness
 
@@ -118,11 +119,10 @@ Last meaningful commit on `main`: `42f8135 chore: hide unused rental_yield_sigma
   pending:** auto-couple `property_age == "new_build"` → force `regime = "current"`
   with override, OR plumb Div 40 / building-cost differentiation properly.
 
-- **Allocation-mix framing.** Real PMs don't ask "100% property OR 100% shares" — they
-  ask "what mix?". A `property_share_mix` slider running both strategies in parallel
-  and reporting blended outcomes is conceptually simple but architecturally non-trivial
-  (how does the equal-cash rule split across two strategies? how does serviceability
-  work for a 60/40 mix?). Defer until base model is stable.
+- **Allocation-mix framing.** **Shipped** as commit `493c27e` using Option A
+  (wealth-level mix; per-trial weighted blend preserving correlation structure).
+  Default `property_share_mix=1.0` preserves current behaviour bit-for-bit.
+  See "Done since v1" for the cross-regime allocation finding.
 
 ## Done since v1
 
@@ -154,6 +154,21 @@ Last meaningful commit on `main`: `42f8135 chore: hide unused rental_yield_sigma
   Was a no-op; re-expose when yield-path stochasticity ships.
 - ✅ `p_solvent` helper dedup (2026-05-16, commit `42f8135`). BACKLOG §Polish §1.
   Minor double-call to `flag_forced_sales` introduced — captured in §Polish §2 above.
+- ✅ **Allocation-mix slider** (2026-05-16, commit `493c27e`). Wealth-level Option A
+  per Opus design conversation. **Headline finding from cross-regime sweep:**
+
+  | mix | current beats_shr / solvent | restricted beats_shr / solvent |
+  |---:|---:|---:|
+  | 0% (pure shares) | 0% / 100% | 0% / 100% |
+  | 25% | 77.8% / 100% | 70.7% / 100% |
+  | 50% | 77.8% / 100% | 70.7% / 99.9% |
+  | 75% | 77.8% / 100% | 60.5% / 79.6% |
+  | 100% (pure property) | 77.6% / 99.0% | **31.4% / 37.1%** |
+
+  Under current rules, pure property is rational (high solvency, no allocation penalty).
+  **Under restricted_2027, the optimal allocation shifts to ~50% property** — beyond that,
+  solvency degrades faster than wealth grows. The Budget 2026-27 changes don't just
+  penalize property; they restructure the optimal portfolio composition.
 
 ---
 
