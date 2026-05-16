@@ -79,7 +79,10 @@ with st.sidebar:
         property_growth_sigma = st.slider("Property growth σ", 0.05, 0.20, 0.11, step=0.01)
         share_return_sigma = st.slider("Share return σ", 0.05, 0.30, 0.15, step=0.01)
         loan_rate_sigma = st.slider("Loan rate σ (pp)", 0.5, 2.0, 1.0, step=0.1) / 100
-        rental_yield_sigma = st.slider("Rental yield σ (pp)", 0.1, 1.0, 0.5, step=0.1) / 100
+        # rental_yield_sigma slider hidden in v1 — it was wired through to run_monte_carlo
+        # but never consumed (PropertyInputs takes a scalar gross_yield). Re-expose when
+        # yield path-stochasticity is implemented (BACKLOG v1.2).
+        rental_yield_sigma = 0.0
         vacancy_weeks_sigma = st.slider("Vacancy σ (weeks)", 0.5, 4.0, 1.0, step=0.5)
         property_growth_mu = st.slider("Property growth μ", 0.0, 0.10, 0.055, step=0.005)
         share_return_mu = st.slider("Share return μ", 0.0, 0.15, 0.085, step=0.005)

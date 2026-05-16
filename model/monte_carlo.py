@@ -52,7 +52,7 @@ from model.normalisation import (
     build_shares_inputs_for_mode_b,
     PORTFOLIO_PROFILES,
 )
-from model.solvency import flag_forced_sales
+from model.solvency import flag_forced_sales, p_solvent
 
 
 def run_monte_carlo(
@@ -191,7 +191,7 @@ def run_monte_carlo(
         "worst_year_cash": float(np.percentile(p_outside_cash.max(axis=1), 90)),
         "median_property_wealth": float(np.median(p_terminal)),
         "median_shares_wealth": float(np.median(s_terminal)),
-        "p_solvent": float(1 - forced_flags.mean()),
+        "p_solvent": p_solvent(p_outside_cash, serviceability_ceiling),
         "p_property_succeeds": float(
             ((p_terminal > s_terminal) & (forced_flags == 0)).mean()
         ),
