@@ -190,6 +190,94 @@ def test_run_monte_carlo_accepts_student_t():
     assert 0 <= result["p_property_succeeds"] <= 1
 
 
+def test_loan_rate_default_is_gaussian():
+    """Default loan_rate_distribution preserves Gaussian behaviour."""
+    result = run_monte_carlo(
+        trials=200, horizon_years=10,
+        purchase_price=700_000, deposit=140_000,
+        stamp_duty=30_000, buying_costs=2_600,
+        loan_rate_mu=0.06, loan_rate_sigma=0.01,
+        gross_yield=0.04,
+        vacancy_weeks_mu=2.0, vacancy_weeks_sigma=1.0,
+        rental_yield_sigma=0.005,
+        property_growth_mu=0.055, property_growth_sigma=0.11,
+        management_fee_pct=0.07, maintenance_pct=0.012,
+        property_age="established_post_2017", asset_type="house",
+        depreciation_override=None,
+        share_return_mu=0.085, share_return_sigma=0.15,
+        portfolio_profile="blended",
+        mode="realistic",
+        margin_loan_rate=0.075, isolate_asset_quality=False,
+        correlation=0.3,
+        mtr=0.37, cpi=0.025, drp=True,
+        serviceability_ceiling=20_000, seed=42,
+    )
+    # Just confirm it runs and headline metrics are in valid range
+    assert 0 <= result["p_property_succeeds"] <= 1
+    # Headline should match the v1 baseline for default seed at 10y
+    # (allow loose tolerance — this is a smoke test, not a snapshot)
+    assert result["p_property_succeeds"] > 0.4
+
+
+def test_loan_rate_student_t_runs_end_to_end():
+    """Pass loan_rate_distribution='student_t' — should not error."""
+    result = run_monte_carlo(
+        trials=200, horizon_years=10,
+        purchase_price=700_000, deposit=140_000,
+        stamp_duty=30_000, buying_costs=2_600,
+        loan_rate_mu=0.06, loan_rate_sigma=0.01,
+        gross_yield=0.04,
+        vacancy_weeks_mu=2.0, vacancy_weeks_sigma=1.0,
+        rental_yield_sigma=0.005,
+        property_growth_mu=0.055, property_growth_sigma=0.11,
+        management_fee_pct=0.07, maintenance_pct=0.012,
+        property_age="established_post_2017", asset_type="house",
+        depreciation_override=None,
+        share_return_mu=0.085, share_return_sigma=0.15,
+        portfolio_profile="blended",
+        mode="realistic",
+        margin_loan_rate=0.075, isolate_asset_quality=False,
+        correlation=0.3,
+        mtr=0.37, cpi=0.025, drp=True,
+        serviceability_ceiling=20_000, seed=42,
+        loan_rate_distribution="student_t", loan_rate_t_df=5,
+    )
+    assert "p_property_succeeds" in result
+    assert 0 <= result["p_property_succeeds"] <= 1
+
+
+def test_loan_rate_student_t_fattens_worst_year_cash_distribution():
+    """At low df, worst-year cash 99th-percentile should be bigger than Gaussian
+    because rare rate spikes are more frequent."""
+    common = dict(
+        trials=2000, horizon_years=10,
+        purchase_price=700_000, deposit=140_000,
+        stamp_duty=30_000, buying_costs=2_600,
+        loan_rate_mu=0.06, loan_rate_sigma=0.01,
+        gross_yield=0.04,
+        vacancy_weeks_mu=2.0, vacancy_weeks_sigma=1.0,
+        rental_yield_sigma=0.005,
+        property_growth_mu=0.055, property_growth_sigma=0.11,
+        management_fee_pct=0.07, maintenance_pct=0.012,
+        property_age="established_post_2017", asset_type="house",
+        depreciation_override=None,
+        share_return_mu=0.085, share_return_sigma=0.15,
+        portfolio_profile="blended",
+        mode="realistic",
+        margin_loan_rate=0.075, isolate_asset_quality=False,
+        correlation=0.3,
+        mtr=0.37, cpi=0.025, drp=True,
+        serviceability_ceiling=20_000, seed=42,
+    )
+    import numpy as np
+    g = run_monte_carlo(**common)  # default gaussian
+    t = run_monte_carlo(**common, loan_rate_distribution="student_t", loan_rate_t_df=4)
+    # 99th percentile of MAX over years per trial (tail of cashflow stress)
+    g_p99 = np.percentile(g["outside_cash_per_trial_year"].max(axis=1), 99)
+    t_p99 = np.percentile(t["outside_cash_per_trial_year"].max(axis=1), 99)
+    assert t_p99 > g_p99 * 1.05, f"Expected fatter tails: g_p99={g_p99:.0f}, t_p99={t_p99:.0f}"
+
+
 def test_p_property_succeeds_is_joint_of_wins_and_solvent():
     """Joint success = P(property wins AND stays solvent within ceiling)."""
     result = run_monte_carlo(

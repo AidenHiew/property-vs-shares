@@ -94,8 +94,9 @@ with st.sidebar:
                 "student_t": "Student-t (fatter tails, more honest about crashes)",
             }[x],
             help="Gaussian under-states tail risk. Student-t with df=5 matches empirical "
-                 "equity kurtosis (~5-6) and produces ~10-15% bigger drawdowns at the 1st/99th "
-                 "percentile. Realized σ is rescaled to match your specified σ."
+                 "equity kurtosis (~5-6) AND captures fat-tailed rate shocks (e.g. AU 1989, "
+                 "2022). Realized σ is rescaled to match your specified σ. Applied to property "
+                 "growth, share return, AND loan rate."
         )
         if return_distribution == "student_t":
             t_df = st.slider("Student-t degrees of freedom", 3, 30, 5,
@@ -192,6 +193,8 @@ result = cached_run(
     serviceability_ceiling=max_top_up,
     seed=42,
     return_distribution=return_distribution, t_df=t_df,
+    loan_rate_distribution=return_distribution,
+    loan_rate_t_df=t_df,
 )
 
 if display_mode == "today":

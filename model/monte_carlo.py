@@ -95,6 +95,8 @@ def run_monte_carlo(
     property_regime: str = "current",
     return_distribution: str = "gaussian",
     t_df: int = 5,
+    loan_rate_distribution: str = "gaussian",
+    loan_rate_t_df: int = 5,
 ):
     """Run the full Monte Carlo simulation. Returns aggregated outputs."""
     rng = np.random.default_rng(seed)
@@ -107,7 +109,14 @@ def run_monte_carlo(
         return_distribution=return_distribution, t_df=t_df,
     )
 
-    loan_rate_paths = loan_rate_mu + loan_rate_sigma * rng.standard_normal((trials, horizon_years))
+    if loan_rate_distribution == "gaussian":
+        loan_rate_z = rng.standard_normal((trials, horizon_years))
+    elif loan_rate_distribution == "student_t":
+        raw = rng.standard_t(loan_rate_t_df, size=(trials, horizon_years))
+        loan_rate_z = raw * np.sqrt((loan_rate_t_df - 2) / loan_rate_t_df)
+    else:
+        raise ValueError(f"unknown loan_rate_distribution: {loan_rate_distribution}")
+    loan_rate_paths = loan_rate_mu + loan_rate_sigma * loan_rate_z
     vacancy_paths = np.maximum(0, vacancy_weeks_mu + vacancy_weeks_sigma * rng.standard_normal((trials, horizon_years)))
     # rental_yield_sigma is plumbed through for future use; v1 PropertyInputs takes a scalar
     # gross_yield, so we don't actually use yield_paths in the loop. Kept here for symmetry
