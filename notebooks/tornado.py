@@ -27,21 +27,30 @@ PERTURBATIONS = [
 
 REGIMES = ("current", "restricted_2027")
 
+FAT_TAILED_KWARGS = dict(
+    return_distribution="student_t",
+    t_df=5,
+    loan_rate_distribution="student_t",
+    loan_rate_t_df=5,
+)
 
-def run_regime(regime, **overrides):
+
+def run_regime(regime, dist_kwargs=None, **overrides):
     """Run Monte Carlo with a given regime and optional overrides."""
-    return run(property_regime=regime, trials=TRIALS, **overrides)
+    kwargs = dict(dist_kwargs) if dist_kwargs else {}
+    kwargs.update(overrides)
+    return run(property_regime=regime, trials=TRIALS, **kwargs)
 
 
-def tornado_for_regime(regime):
+def tornado_for_regime(regime, dist_kwargs=None):
     """Compute tornado rows for a single regime. Returns (base_p, rows)."""
-    base_result = run_regime(regime)
+    base_result = run_regime(regime, dist_kwargs=dist_kwargs)
     base_p = base_result["p_property_succeeds"]
 
     rows = []
     for (name, low_val, base_val, high_val) in PERTURBATIONS:
-        r_low = run_regime(regime, **{name: low_val})
-        r_high = run_regime(regime, **{name: high_val})
+        r_low = run_regime(regime, dist_kwargs=dist_kwargs, **{name: low_val})
+        r_high = run_regime(regime, dist_kwargs=dist_kwargs, **{name: high_val})
 
         p_low = r_low["p_property_succeeds"]
         p_high = r_high["p_property_succeeds"]
@@ -69,10 +78,10 @@ def fmt_delta(d):
     return f"{sign}{d*100:.1f}pp"
 
 
-def print_table(regime, base_p, rows):
+def print_table(regime, base_p, rows, dist_label="Gaussian"):
     print()
     print("=" * 88)
-    print(f"TORNADO: regime={regime}")
+    print(f"TORNADO ({dist_label}): regime={regime}")
     print(f"BASE p_property_succeeds = {base_p*100:.1f}%")
     print("=" * 88)
     header = (
@@ -89,36 +98,85 @@ def print_table(regime, base_p, rows):
 
 
 def main():
-    results = {}
+    # --- Gaussian pass ---
+    gaussian_results = {}
     for regime in REGIMES:
-        base_p, rows = tornado_for_regime(regime)
-        results[regime] = (base_p, rows)
-        print_table(regime, base_p, rows)
+        base_p, rows = tornado_for_regime(regime, dist_kwargs=None)
+        gaussian_results[regime] = (base_p, rows)
+        print_table(regime, base_p, rows, dist_label="Gaussian")
+
+    # --- Fat-tailed pass ---
+    print()
+    print("#" * 88)
+    print("# NOW WITH FAT-TAILED DISTRIBUTIONS (Student-t df=5 on returns AND rates)        #")
+    print("#" * 88)
+
+    fat_results = {}
+    for regime in REGIMES:
+        base_p, rows = tornado_for_regime(regime, dist_kwargs=FAT_TAILED_KWARGS)
+        fat_results[regime] = (base_p, rows)
+        print_table(regime, base_p, rows, dist_label="Student-t df=5")
 
     # Interpretation footer
     print()
     print("INTERPRETATION:")
+
+    # Gaussian summary
+    print("  [Gaussian]")
     for regime in REGIMES:
-        _, rows = results[regime]
+        _, rows = gaussian_results[regime]
         top = rows[0]
         print(
-            f"- Top input under {regime}: {top['name']} drives ~{top['swing']*100:.0f}pp swing"
+            f"  - Top input under {regime}: {top['name']} drives ~{top['swing']*100:.0f}pp swing"
             f" in p_property_succeeds."
         )
 
-    # Cross-regime insight — find inputs that appear #1 in each regime
-    top_current = results["current"][1][0]["name"]
-    top_restricted = results["restricted_2027"][1][0]["name"]
-    dominant = top_current if top_current == top_restricted else f"{top_current} (current) / {top_restricted} (restricted)"
-    swing_current = results["current"][1][0]["swing"] * 100
-    swing_restricted = results["restricted_2027"][1][0]["swing"] * 100
-    max_swing = max(swing_current, swing_restricted)
+    top_current_g = gaussian_results["current"][1][0]["name"]
+    top_restricted_g = gaussian_results["restricted_2027"][1][0]["name"]
+    dominant_g = top_current_g if top_current_g == top_restricted_g else f"{top_current_g} (current) / {top_restricted_g} (restricted)"
+    swing_restricted_g = gaussian_results["restricted_2027"][1][0]["swing"] * 100
 
-    print(
-        f"- Implication: the headline is most sensitive to {dominant}. If your conviction"
+    print(f"  - Gaussian headline driver: {dominant_g} (~{swing_restricted_g:.0f}pp range under restricted_2027).")
+
+    # Fat-tailed summary
+    print("  [Student-t df=5]")
+    for regime in REGIMES:
+        _, rows = fat_results[regime]
+        top = rows[0]
+        print(
+            f"  - Top input under {regime}: {top['name']} drives ~{top['swing']*100:.0f}pp swing"
+            f" in p_property_succeeds."
+        )
+
+    top_current_f = fat_results["current"][1][0]["name"]
+    top_restricted_f = fat_results["restricted_2027"][1][0]["name"]
+    dominant_f = top_current_f if top_current_f == top_restricted_f else f"{top_current_f} (current) / {top_restricted_f} (restricted)"
+
+    # loan_rate_mu robustness check
+    fat_restricted_rows = fat_results["restricted_2027"][1]
+    loan_rate_row_fat = next((r for r in fat_restricted_rows if r["name"] == "loan_rate_mu"), None)
+    loan_rate_rank_fat = next(
+        (i + 1 for i, r in enumerate(fat_restricted_rows) if r["name"] == "loan_rate_mu"), None
     )
+    loan_rate_swing_fat = loan_rate_row_fat["swing"] * 100 if loan_rate_row_fat else None
+
+    still_dominant = (top_restricted_f == "loan_rate_mu")
+    if still_dominant:
+        robustness_msg = (
+            f"  - ROBUST: loan_rate_mu is STILL the top driver under restricted_2027 + Student-t df=5"
+            f" ({loan_rate_swing_fat:.0f}pp swing). The leveraged-bet-on-rates thesis holds across"
+            f" both distribution choices."
+        )
+    else:
+        robustness_msg = (
+            f"  - REVISED: loan_rate_mu is NO LONGER top driver under restricted_2027 + Student-t df=5"
+            f" (rank #{loan_rate_rank_fat}, swing {loan_rate_swing_fat:.0f}pp)."
+            f" Top driver is now {top_restricted_f}. Reconsider the leveraged-bet-on-rates headline."
+        )
+
+    print(robustness_msg)
     print(
-        f"  on {dominant} is weak, the model is correspondingly weak (~{max_swing:.0f}pp range)."
+        f"  - Fat-tailed headline driver: {dominant_f}."
     )
 
 
