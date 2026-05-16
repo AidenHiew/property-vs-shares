@@ -6,30 +6,38 @@ a real allocation decision a second time.
 
 ## Pickup notes (when resuming)
 
-**Last touched: 2026-05-16, very late evening session (continued into night).** Working tree
-clean, 92/92 tests passing. **All v1.1 bugs + ALL polish items + ALL 4 finance-expert
-recommendations + ALL surfaced-during-sensitivity items shipped.** Only larger v1.2 features
-remain (Mode B margin calls, idiosyncratic shocks, capex events, offset account, other states).
-Chart redesign parked pending user visual verification of frontier mockup.
+**Last touched: 2026-05-16, very late night session (continued into the small hours).** Working
+tree clean, 95/95 tests passing. **All v1.1 bugs + ALL polish + ALL 4 finance-expert
+recommendations + ALL surfaced-during-sensitivity items + UI redesign all shipped.** The app
+is now recommendation-first (persona cards lead the main pane, comparison table behind expander,
+old histograms demoted into a detail expander). Only larger v1.2 features remain.
 
-### What landed across the 2026-05-16 sessions (10 commits)
+### What landed across the 2026-05-16 sessions (~20 commits — see `git log` for full list)
 
-Earlier (evening 1):
-1. `7ef3baf` test — scenario sweep script (`notebooks/scenario_sweep.py`)
-2. `8775380` **feat — joint `p_property_succeeds` metric + reframed app headline**
-3. `a6120ac` test — tornado sensitivity (`notebooks/tornado.py`)
-4. `fe2836a` feat — opt-in Student-t for property + share returns
-5. `ca4dd41` docs — BACKLOG ticked off shipped, captured findings
-6. `8bd01f6` feat — extended Student-t to loan_rate (tornado-dominant input)
-7. `31cd5ab` docs — pickup notes refresh
+Highlights by phase:
 
-Later (evening 2):
-8. `f108b2a` test — tornado pass under fat-tailed distributions (validated finding)
-9. `32a8f01` **fix — stamp duty + buying costs in CGT cost base (BACKLOG §1)**
-10. `4f061d8` fix — new-build × regime warning banner + dual-seed RNG decoupling
-11. `42f8135` chore — hid no-op `rental_yield_sigma` slider + `p_solvent` helper dedup
+**Evening 1** — joint-metric reframe + sensitivity + fat-tail honesty:
+- `8775380` **joint `p_property_succeeds` metric + reframed headline**
+- `a6120ac` tornado sensitivity (`notebooks/tornado.py`)
+- `fe2836a` opt-in Student-t for returns
+- `8bd01f6` extended Student-t to loan_rate (tornado-dominant input)
 
-### The four findings worth re-reading before doing anything new
+**Evening 2** — bugs, polish, BACKLOG cleanup:
+- `f108b2a` fat-tailed tornado (confirmed loan_rate dominance robust)
+- `32a8f01` **stamp duty + buying costs in CGT cost base** (BACKLOG §1)
+- `4f061d8` new-build × regime warning + dual-seed RNG decoupling
+- `42f8135` hid no-op `rental_yield_sigma` slider + `p_solvent` helper dedup
+- `f15e95a` **exact today-$ deflation + mix-array deflation + p_solvent revert**
+
+**Evening 3 (night)** — UI redesign from histogram → recommendation hero:
+- `4cf417c` auto-couple new-build → current regime (Budget 2026-27 carve-out)
+- `493c27e` **wealth-level allocation mix slider** (the headline finding came from this)
+- `a324240` model-layer `wealth_per_year` exposure
+- 4 mockup iterations (frontier / fan / static personas / dynamic personas)
+- `b9a1e8c` **persona cards + comparison table as recommendation hero in app.py**
+- `1fc66d1` **bugfix: HTML rendering + dollar-sign mathjax escapes**
+
+### The five findings worth re-reading before doing anything new
 
 1. **Honest headline = ~32%, not 70%.** Under restricted_2027, joint success
    `p_property_wins ∧ p_solvent` is what matters. Solvency is the binding constraint.
@@ -42,22 +50,26 @@ Later (evening 2):
    `current` regime, headline lifted +0.4pp; under `restricted_2027`, headline barely moved
    because the loss pool already neutralizes most post-commencement CGT. Implication: the
    bug was hiding under current rules, not under the restricted regime.
+5. **The Budget 2026-27 regime restructures the optimal allocation from 100% → ~60%.**
+   Cross-regime mix sweep (commit `493c27e`) revealed: under `current` rules, pure property
+   is rational (high solvency at any mix). Under `restricted_2027`, the optimal mix per
+   the persona logic (highest wealth at ≥95% safety) is **60% property / 40% shares**.
+   Beyond 60%, solvency drops off a cliff (60% → 65% takes P(solvent) from 97% → 94%).
+   This is the actionable answer the model now gives via the persona cards in the app UI.
 
 ### Suggested resume order
 
 1. **Smoke-test the app first** (5 min). `source .venv/bin/activate && streamlit run app.py`.
-   New things to look at: the joint success headline, the new-build × restricted warning
-   banner (toggle property_age → new_build + regime → restricted_2027), and the Student-t
-   dropdown in Advanced.
-2. **Pick from "Remaining" below.** The allocation-mix slider is the highest-leverage piece
-   left (PM-grade reframing). The `worst_year_cash` deflation refinement is small and only
-   matters if the rough number feels wrong.
+   The UI is now recommendation-first — the three persona cards lead the main pane. Drag
+   the sidebar mix slider to override the recommendation; toggle regime/property-age to
+   see the cards adapt.
+2. **Pick a v1.2 feature from "Remaining" below** if you want to keep building. Mode B
+   margin calls is the most honesty-improving option (current Mode B is misleadingly
+   favorable to leveraged-shares). Other states (VIC/NSW) is most practically useful if
+   you're considering investing outside SA.
 
-### Remaining items (only larger features + 1 parked design)
+### Remaining items (larger v1.2 features only)
 
-- **Chart redesign (parked).** Frontier mockup at `notebooks/frontier_mockup.html`
-  generated for visual review — open with `open notebooks/frontier_mockup.html`.
-  User couldn't verify when proposed; decide on phase 1 ship after visual review.
 - **Mode B margin-call modelling (BIG feature).** Currently the model warns that
   margin calls aren't modelled but the Mode B comparison is still misleadingly
   favorable to leveraged-shares. Real margin calls force-sell at the bottom of crashes.
@@ -76,24 +88,46 @@ Later (evening 2):
   tables. Other states have different brackets and exemptions. Needs scoping: which
   state matters most for the user (VIC, NSW most likely).
 
+### Small follow-ups (nice-to-have, not blocking)
+
+- **Persona-card thresholds (≥99/95/85%) are hardcoded.** Could be exposed as Advanced
+  settings if you want to tune your safety appetite levels per scenario.
+- **Cards are informational, not clickable.** Could become "click to set the slider" via
+  `st.session_state` for one-click selection.
+- **Sweep runs at 2000 trials × 11 mix points.** First load of new inputs takes ~5–10 s.
+  Cached, so subsequent re-renders are instant. Could shrink to 7 mix points or 1000 trials
+  if the cold-load delay bothers you.
+- **Year-by-year wealth fan chart mockup exists** at `notebooks/wealth_fan_mockup.py` but
+  was not integrated — user said it didn't land. The model-layer `wealth_per_year` exposure
+  shipped anyway (commit `a324240`); ready if you change your mind.
+
 ### Setup commands
 
 ```bash
 cd "/Users/aidenmacmini/AI Project/Financial Modeling/property-vs-shares"
 source .venv/bin/activate
-PYTHONPATH=. pytest -q              # expect 92 passed
+PYTHONPATH=. pytest -q              # expect 95 passed
 PYTHONPATH=. python notebooks/scenario_sweep.py   # full regime × dial sweep
 PYTHONPATH=. python notebooks/tornado.py          # sensitivity ranking (4 tables)
 streamlit run app.py                # launch UI
 ```
 
-Last meaningful commit on `main`: `f15e95a chore: exact today-$ deflation + mix-array deflation + p_solvent revert`
+Last meaningful commit on `main`: `1fc66d1 fix(app): persona cards render as HTML + dollar signs escape mathjax`
 
-### Open notebooks/mockups for review
+### Mockup files (informational — chart redesign already shipped to app)
 
-- `notebooks/frontier_mockup.html` — interactive Plotly mockup of the proposed
-  efficient-frontier hero chart. Open with `open notebooks/frontier_mockup.html`.
-  Decide if the framing lands; if yes, ship Phase 1 of the chart redesign.
+- `notebooks/frontier_mockup.html` — interactive efficient-frontier chart with
+  plain-language axes. Standalone view; the app ships persona cards instead.
+- `notebooks/wealth_fan_mockup.html` — year-by-year wealth path with bands.
+  User dismissed as "not landing" — not integrated. Model layer (`wealth_per_year`)
+  is still exposed in case the framing comes back.
+- `notebooks/recommendation_mockup.html` — the side-by-side cards + table
+  comparison that informed the final design. Now redundant since both are in the app.
+
+Regenerate any of these with:
+```bash
+PYTHONPATH=. python notebooks/<name>_mockup.py
+```
 
 ## Bugs / correctness
 
@@ -196,6 +230,40 @@ Last meaningful commit on `main`: `f15e95a chore: exact today-$ deflation + mix-
     missing from the deflation block — inconsistent display when mix < 1 + Today's $ mode.
   - Reverted the `p_solvent` "dedup" from commit `42f8135` that introduced redundant
     `flag_forced_sales` computation. Helper still available for fresh callers.
+- ✅ Model-layer `wealth_per_year` exposure (2026-05-16, commit `a324240`).
+  Read-only addition: PropertyResult, ShareResult, and the monte_carlo return dict
+  now expose year-by-year mark-to-market pre-tax wealth. No simulation behavior
+  change. Foundation for any future path-dependent visualization.
+- ✅ **Recommendation-first UI redesign** (2026-05-16, commits `b9a1e8c` + `1fc66d1`).
+  After 4 mockup iterations (frontier with relabels, year-by-year fan chart,
+  static personas, dynamic personas), the chosen design landed in `app.py`:
+  - **Persona cards lead the main pane**: Safe Player (≥99% safe), Balanced ⭐
+    (≥95% safe — the optimization target), Wealth Maximizer (≥85% safe). Each
+    allocation is **computed dynamically** from the safety threshold — they shift
+    with sidebar inputs.
+  - **Comparison table** behind `▾ Compare all allocations` expander (collapsed by
+    default). Full 11-row mix sweep with recommended row highlighted green.
+  - **Old terminal-wealth histogram + cashflow stress chart** demoted into
+    `▾ Show distributions and cashflow detail` expander (collapsed). They still
+    exist for users who want the underlying distributions, but no longer compete
+    for attention with the recommendation.
+  - **Existing slider + headline + KPI tiles unchanged** — they describe the
+    user's CURRENT mix selection, which they can override against the recommendation.
+  - **Edge cases handled**: merged single-card when all 3 thresholds resolve to same
+    allocation (e.g. under `current` regime); "Unreachable" Safe Player card when
+    no allocation meets ≥99% safety (e.g. very tight serviceability ceiling).
+  - **Sweep runs at 2000 trials × 11 mix points**, cached via `st.cache_data`.
+    Cold load adds ~5–10s; subsequent renders instant.
+  - **Bugfix bundled in `1fc66d1`**: f-string HTML was indented 4+ spaces, which
+    Streamlit's markdown parser interpreted as a code block. Cards initially rendered
+    as raw `<div>` text. Fixed via `_render_html` helper that strips per-line
+    indent. Also escaped `\$` in pre-existing markdown calls where dollar signs
+    were being eaten by Streamlit's mathjax.
+
+  **Mockup files** that informed the design persist in `notebooks/`:
+  - `frontier_mockup.py/html` — efficient frontier with plain-language labels
+  - `wealth_fan_mockup.py/html` — year-by-year wealth path (rejected as too busy)
+  - `recommendation_mockup.py/html` — persona cards + comparison table
 
 ---
 
