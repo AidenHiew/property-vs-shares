@@ -124,6 +124,22 @@ with st.sidebar:
                               format_func=lambda x: f"{x:.1f}")
         correlation = st.slider("Property–shares correlation", -1.0, 1.0, corr_quick, step=0.05)
 
+        # Budget 2026-27 new-build carve-out override (only relevant for new builds
+        # selected with restricted_2027 regime — otherwise this checkbox is no-op).
+        if property_age == "new_build":
+            st.subheader("Budget 2026-27 new-build carve-out")
+            override_new_build_carveout = st.checkbox(
+                "Override carve-out (apply restricted rules to new build anyway)",
+                value=False,
+                help="Per the Budget 2026-27 announcement, new builds retain full "
+                     "negative gearing and can elect either CGT method. The model "
+                     "auto-applies 'current' rules for new builds regardless of the "
+                     "regime selector. Tick this to model the counterfactual where "
+                     "the carve-out is removed in future legislation."
+            )
+        else:
+            override_new_build_carveout = False
+
         st.subheader("Mode B — counterfactual")
         margin_loan_rate = st.slider("Margin loan rate", 0.05, 0.12, 0.075, step=0.005)
         isolate_asset_quality = st.checkbox(
@@ -155,8 +171,15 @@ buying_costs = 2_600  # conveyancing + inspection + loan app
 st.markdown(f"**Upfront cash deployed:** ${deposit + stamp_duty + buying_costs:,.0f} "
             f"(${deposit:,.0f} deposit + ${stamp_duty:,.0f} stamp duty + ${buying_costs:,.0f} buying costs)")
 
+# Apply Budget 2026-27 new-build carve-out unless explicitly overridden.
+# Per the announcement, new builds retain full NG and can elect either CGT method.
+if property_age == "new_build" and not override_new_build_carveout:
+    effective_property_regime = "current"
+else:
+    effective_property_regime = property_regime
+
 # Federal Budget 2026-27 regime banner
-if property_regime == "restricted_2027":
+if effective_property_regime == "restricted_2027":
     st.info(
         "🏛 **Federal Budget 2026-27 regime.** From FY2028: rental losses on this "
         "property are quarantined (no salary refund; carry forward to future residential "
@@ -166,14 +189,21 @@ if property_regime == "restricted_2027":
         "**announcement-only** (not yet legislated). Model assumes no other residential "
         "property income offsetting the loss pool."
     )
-    if property_age == "new_build":
-        st.warning(
-            "⚠ **New-build × restricted regime mismatch.** Under the Budget 2026-27 announcement, "
-            "**new builds retain full negative gearing** (and can elect either CGT method at sale) — "
-            "but this model's regime toggle is global and currently applies NG quarantining to all "
-            "property ages. For a new build, switch the regime to **'Current rules'** to get the "
-            "correct treatment. (Captured as BACKLOG v1.2 — auto-couple new_build → current.)"
-        )
+
+# Carve-out notice: fires when user picked restricted_2027 but new-build override
+# kept current rules applied
+if (
+    property_age == "new_build"
+    and property_regime == "restricted_2027"
+    and effective_property_regime == "current"
+):
+    st.success(
+        "🏠 **New-build carve-out auto-applied.** You selected the Budget 2026-27 "
+        "regime, but per the announcement, **new builds retain full negative gearing** "
+        "and can elect either CGT method. Running 'current' rules. Tick the override "
+        "in Advanced if you want to model the counterfactual where the carve-out is "
+        "removed."
+    )
 
 # Symmetric reinvestment banner
 st.warning(
@@ -206,7 +236,7 @@ result = cached_run(
     management_fee_pct=management_fee_pct, maintenance_pct=maintenance_pct,
     property_age=property_age, asset_type=asset_type,
     depreciation_override=depreciation_override,
-    property_regime=property_regime,
+    property_regime=effective_property_regime,
     portfolio_profile=portfolio_profile,
     mode=mode,
     margin_loan_rate=margin_loan_rate, isolate_asset_quality=isolate_asset_quality,
@@ -304,7 +334,7 @@ st.plotly_chart(fig2, use_container_width=True)
 with st.expander("Assumptions used in this run", expanded=False):
     st.markdown(f"""
 - **Tax:** SA, MTR {mtr:.0%}, FY2026 Stage 3 brackets
-- **Negative gearing:** current FY2026 rules ⚠ law potentially changing in Budget 2026-27
+- **Negative gearing:** {effective_property_regime} rules (raw selector: {property_regime}; new-build carve-out: {'applied' if property_age == 'new_build' and not override_new_build_carveout else 'n/a'})
 - **Property:** {property_age.replace('_', ' ').title()}, {asset_type.title()}
 - **Portfolio profile:** {portfolio_profile.replace('_', ' ').title()} (μ {PORTFOLIO_PROFILES[portfolio_profile]['return_mu']:.1%}, σ {PORTFOLIO_PROFILES[portfolio_profile]['return_sigma']:.1%}, {PORTFOLIO_PROFILES[portfolio_profile]['franked']:.0%} franked)
 - **Correlation (property ↔ shares):** {correlation:.2f}

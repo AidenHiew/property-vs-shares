@@ -449,3 +449,31 @@ def test_loan_rate_path_uncorrelated_with_return_paths():
     corr = np.corrcoef(loan_rate_z.ravel(), prop.ravel())[0, 1]
     # Sampling noise at N=50000 is roughly 1/sqrt(N) ≈ 0.0045; allow 5x for safety
     assert abs(corr) < 0.05, f"Expected near-zero correlation, got {corr:.4f}"
+
+
+def test_run_monte_carlo_default_restricted_with_new_build_runs():
+    """Confirm passing property_regime='current' with new_build runs end-to-end.
+    Wiring sanity check for the app's effective_property_regime computation."""
+    result = run_monte_carlo(
+        trials=200, horizon_years=10,
+        purchase_price=700_000, deposit=140_000,
+        stamp_duty=30_000, buying_costs=2_600,
+        loan_rate_mu=0.06, loan_rate_sigma=0.01,
+        gross_yield=0.04,
+        vacancy_weeks_mu=2.0, vacancy_weeks_sigma=1.0,
+        rental_yield_sigma=0.0,
+        property_growth_mu=0.055, property_growth_sigma=0.11,
+        management_fee_pct=0.07, maintenance_pct=0.012,
+        property_age="new_build", asset_type="house",
+        depreciation_override=None,
+        share_return_mu=0.085, share_return_sigma=0.15,
+        portfolio_profile="blended",
+        mode="realistic",
+        margin_loan_rate=0.075, isolate_asset_quality=False,
+        correlation=0.3,
+        mtr=0.37, cpi=0.025, drp=True,
+        serviceability_ceiling=20_000, seed=42,
+        property_regime="current",  # what effective_property_regime would resolve to
+    )
+    # Just confirm it runs and produces valid metrics
+    assert 0 <= result["p_property_succeeds"] <= 1
