@@ -6,10 +6,11 @@ a real allocation decision a second time.
 
 ## Pickup notes (when resuming)
 
-**Last touched: 2026-05-16, very late evening session.** Working tree clean, 90/90 tests passing.
-All v1.1 bugs + ALL 4 finance-expert recommendations + 2 of 3 surfaced-during-sensitivity items
-shipped (the third is the property-age auto-couple, partially mitigated by warning banner).
-Only `worst_year_cash` deflation precision (small) and larger v1.2 features remain.
+**Last touched: 2026-05-16, very late evening session (continued into night).** Working tree
+clean, 92/92 tests passing. **All v1.1 bugs + ALL polish items + ALL 4 finance-expert
+recommendations + ALL surfaced-during-sensitivity items shipped.** Only larger v1.2 features
+remain (Mode B margin calls, idiosyncratic shocks, capex events, offset account, other states).
+Chart redesign parked pending user visual verification of frontier mockup.
 
 ### What landed across the 2026-05-16 sessions (10 commits)
 
@@ -52,28 +53,47 @@ Later (evening 2):
    left (PM-grade reframing). The `worst_year_cash` deflation refinement is small and only
    matters if the rough number feels wrong.
 
-### Remaining items (in decision-relevance order)
+### Remaining items (only larger features + 1 parked design)
 
-- **Property-age × regime auto-coupling** (currently just a warning banner). Auto-set regime
-  to `current` when `property_age == "new_build"` with override option. v1.2 candidate.
-- **`worst_year_cash` deflation** (BACKLOG §Polish §2). Approximate; only fix if the
-  number ever feels off.
-- **Larger v1.2 features**: Mode B margin-call modelling, single-property idiosyncratic
-  risk shocks, capex events, offset account, other states. All bigger commitments —
-  brainstorm scope before plunging in.
+- **Chart redesign (parked).** Frontier mockup at `notebooks/frontier_mockup.html`
+  generated for visual review — open with `open notebooks/frontier_mockup.html`.
+  User couldn't verify when proposed; decide on phase 1 ship after visual review.
+- **Mode B margin-call modelling (BIG feature).** Currently the model warns that
+  margin calls aren't modelled but the Mode B comparison is still misleadingly
+  favorable to leveraged-shares. Real margin calls force-sell at the bottom of crashes.
+  Needs design: when does a call trigger? what's the forced sale loss model?
+- **Single-property idiosyncratic risk shocks (BIG feature).** v1 uses index-level
+  property returns; a single property has materially more variance (rebuild/repair
+  events, neighbourhood shocks, tenancy gaps). Needs design: shock frequency, magnitude
+  distribution, correlation with macro factors.
+- **Major capex events (BIG feature).** Roof, hot water, HVAC, structural — rare but
+  large negative cashflows. Needs design: probability per year, magnitude distribution,
+  whether capitalised vs immediately deducted.
+- **Offset account as a third strategy (BIG feature).** Conceptually different
+  comparison: NG property + offset bucket vs straight shares. Needs design: how the
+  offset interacts with the existing mode A/B framing.
+- **Other states beyond SA (BIG feature).** Currently uses SA stamp duty and land tax
+  tables. Other states have different brackets and exemptions. Needs scoping: which
+  state matters most for the user (VIC, NSW most likely).
 
 ### Setup commands
 
 ```bash
 cd "/Users/aidenmacmini/AI Project/Financial Modeling/property-vs-shares"
 source .venv/bin/activate
-PYTHONPATH=. pytest -q              # expect 90 passed
+PYTHONPATH=. pytest -q              # expect 92 passed
 PYTHONPATH=. python notebooks/scenario_sweep.py   # full regime × dial sweep
 PYTHONPATH=. python notebooks/tornado.py          # sensitivity ranking (4 tables)
 streamlit run app.py                # launch UI
 ```
 
-Last meaningful commit on `main`: `493c27e feat(monte-carlo): wealth-level allocation mix slider`
+Last meaningful commit on `main`: `f15e95a chore: exact today-$ deflation + mix-array deflation + p_solvent revert`
+
+### Open notebooks/mockups for review
+
+- `notebooks/frontier_mockup.html` — interactive Plotly mockup of the proposed
+  efficient-frontier hero chart. Open with `open notebooks/frontier_mockup.html`.
+  Decide if the framing lands; if yes, ship Phase 1 of the chart redesign.
 
 ## Bugs / correctness
 
@@ -81,18 +101,7 @@ Last meaningful commit on `main`: `493c27e feat(monte-carlo): wealth-level alloc
 
 ## Polish / minor
 
-- **`worst_year_cash` deflation is approximate** — `app.py` uses `(1 + cpi) ** horizon` for the
-  90th-percentile worst-year cash figure, but those worst years don't all land at year `horizon`.
-  Error up to ~80% of the full deflator (a few thousand dollars on a $15k figure). Acceptable
-  for a personal tool but worth either a UI tooltip or an exact per-trial-year deflation.
-
-- **`flag_forced_sales` is called twice in `run_monte_carlo`** as a side effect of the
-  `p_solvent` helper dedup (commit `42f8135`). Once explicitly to compute `forced_flags`
-  (still needed for `p_property_succeeds` and the `forced_sale_flags` return key), once
-  inside `p_solvent(p_outside_cash, ceiling)`. Performance is irrelevant (vectorised numpy,
-  sub-ms) but it's not clean dedup. Future cleanup: either restructure `p_solvent` to accept
-  pre-computed flags, or revert to inline `float(1 - forced_flags.mean())` (the original was
-  actually fine).
+*All shipped 2026-05-16. See "Done since v1" below.*
 
 ## Larger v1.1 features (already noted in design spec §16)
 
@@ -169,6 +178,24 @@ Last meaningful commit on `main`: `493c27e feat(monte-carlo): wealth-level alloc
   **Under restricted_2027, the optimal allocation shifts to ~50% property** — beyond that,
   solvency degrades faster than wealth grows. The Budget 2026-27 changes don't just
   penalize property; they restructure the optimal portfolio composition.
+
+- ✅ Property-age × regime auto-couple (2026-05-16, commit `4cf417c`). Per Budget 2026-27,
+  new builds retain full NG and can elect either CGT method. The model now auto-applies
+  `current` rules when `property_age == "new_build"` regardless of the regime selector,
+  with an Advanced-section override checkbox for power users modelling the counterfactual.
+  Replaces the warning banner from `4f061d8` with a positive carve-out notice. Sanity
+  confirmed: new builds give identical `p_property_succeeds = 77.6%` regardless of regime
+  selector position; established properties still differentiate (77.6% vs 31.4%).
+- ✅ Exact today-$ deflation for `worst_year_cash` + mix-array deflation +
+  `p_solvent` revert (2026-05-16, commit `f15e95a`). Three polish items in one:
+  - Old today-$ deflation used `(1+cpi)^horizon` regardless of which year was worst.
+    Under default scenario this understated the displayed worst-year cash by **$10,522**
+    (~67% of the nominal-to-fully-deflated gap). Now correctly recomputes after per-year
+    deflation: $26,305 vs the old $15,782.
+  - Mix arrays (`mixed_terminal_wealth`, `mixed_outside_cash_per_trial_year`) were
+    missing from the deflation block — inconsistent display when mix < 1 + Today's $ mode.
+  - Reverted the `p_solvent` "dedup" from commit `42f8135` that introduced redundant
+    `flag_forced_sales` computation. Helper still available for fresh callers.
 
 ---
 
