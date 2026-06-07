@@ -134,6 +134,21 @@ def run_monte_carlo(
     p_wealth_path = np.zeros((trials, horizon_years))
     s_wealth_path = np.zeros((trials, horizon_years))
 
+    # Per-year breakdown arrays — shape (trials, horizon_years)
+    p_value_path = np.zeros((trials, horizon_years))
+    p_loan_balance_path = np.zeros((trials, horizon_years))
+    p_rent_path = np.zeros((trials, horizon_years))
+    p_interest_path = np.zeros((trials, horizon_years))
+    p_other_costs_path = np.zeros((trials, horizon_years))
+    p_depreciation_path = np.zeros((trials, horizon_years))
+    p_tax_path = np.zeros((trials, horizon_years))
+    p_cashflow_path = np.zeros((trials, horizon_years))
+    p_overflow_path = np.zeros((trials, horizon_years))
+    s_dividend_path = np.zeros((trials, horizon_years))
+    s_dividend_tax_path = np.zeros((trials, horizon_years))
+    s_margin_interest_path = np.zeros((trials, horizon_years))
+    s_cashflow_path = np.zeros((trials, horizon_years))
+
     for t in range(trials):
         p_inputs = PropertyInputs(
             purchase_price=purchase_price,
@@ -187,6 +202,21 @@ def run_monte_carlo(
         p_wealth_path[t] = p_result.wealth_per_year
         s_wealth_path[t] = s_result.wealth_per_year
 
+        # Per-year breakdown
+        p_value_path[t] = p_result.property_value_path
+        p_loan_balance_path[t] = p_result.loan_balance_path
+        p_rent_path[t] = p_result.rent_path
+        p_interest_path[t] = p_result.interest_path
+        p_other_costs_path[t] = p_result.other_costs_path
+        p_depreciation_path[t] = p_result.depreciation_path
+        p_tax_path[t] = p_result.tax_path
+        p_cashflow_path[t] = p_result.cashflow_per_year
+        p_overflow_path[t] = p_result.overflow_balance_path
+        s_dividend_path[t] = s_result.dividend_path
+        s_dividend_tax_path[t] = s_result.dividend_tax_path
+        s_margin_interest_path[t] = s_result.margin_interest_path
+        s_cashflow_path[t] = s_result.cashflow_per_year
+
     forced_flags = flag_forced_sales(p_outside_cash, serviceability_ceiling)
 
     # Allocation mix computation
@@ -225,4 +255,18 @@ def run_monte_carlo(
         ),
         "p_mix_solvent": float(1 - mixed_forced_flags.mean()),
         "mixed_outside_cash_per_trial_year": mixed_outside_cash,
+        # Per-year breakdown arrays — shape (trials, horizon_years)
+        "property_value_path": p_value_path,
+        "property_loan_balance_path": p_loan_balance_path,
+        "property_rent_path": p_rent_path,
+        "property_interest_path": p_interest_path,
+        "property_other_costs_path": p_other_costs_path,
+        "property_depreciation_path": p_depreciation_path,
+        "property_tax_path": p_tax_path,
+        "property_cashflow_path": p_cashflow_path,
+        "property_overflow_path": p_overflow_path,
+        "shares_dividend_path": s_dividend_path,
+        "shares_dividend_tax_path": s_dividend_tax_path,
+        "shares_margin_interest_path": s_margin_interest_path,
+        "shares_cashflow_path": s_cashflow_path,
     }

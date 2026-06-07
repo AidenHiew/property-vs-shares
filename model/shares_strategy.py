@@ -11,7 +11,7 @@ Cashflow accounting:
   - cashflow_per_year = -(dividend_tax + margin_interest + external_contributions)
     This mirrors the property strategy convention: what actually hits the bank account.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 import numpy as np
 
@@ -44,6 +44,10 @@ class SharesResult:
     cgt_paid_on_sale: float
     terminal_after_tax_wealth: float
     wealth_per_year: np.ndarray  # mark-to-market PRE-tax: portfolio_value at end of each year
+    # --- Per-year breakdown arrays (length = horizon_years) ---
+    dividend_path: np.ndarray = field(default=None)           # gross dividends per year
+    dividend_tax_path: np.ndarray = field(default=None)       # dividend tax per year (after margin-interest adjustment)
+    margin_interest_path: np.ndarray = field(default=None)    # margin loan interest per year
 
 
 def simulate_shares_trial(inputs: SharesInputs) -> SharesResult:
@@ -57,6 +61,9 @@ def simulate_shares_trial(inputs: SharesInputs) -> SharesResult:
 
     cashflow_per_year = np.zeros(h)
     wealth_per_year = np.zeros(h)
+    dividend_path = np.zeros(h)
+    dividend_tax_path = np.zeros(h)
+    margin_interest_path = np.zeros(h)
     total_dividends = 0.0
     total_dividend_tax = 0.0
 
@@ -82,6 +89,11 @@ def simulate_shares_trial(inputs: SharesInputs) -> SharesResult:
 
         # Accumulate AFTER adjusting div_tax for margin-interest saving.
         total_dividend_tax += div_tax
+
+        # Record per-year breakdown values.
+        dividend_path[year] = dividends
+        dividend_tax_path[year] = div_tax
+        margin_interest_path[year] = margin_interest
 
         # MER reduces portfolio NAV internally — not a cash cost to the investor.
         mer_cost = portfolio_value * inputs.mer
@@ -124,4 +136,7 @@ def simulate_shares_trial(inputs: SharesInputs) -> SharesResult:
         cgt_paid_on_sale=cgt_paid,
         terminal_after_tax_wealth=terminal_after_tax_wealth,
         wealth_per_year=wealth_per_year,
+        dividend_path=dividend_path,
+        dividend_tax_path=dividend_tax_path,
+        margin_interest_path=margin_interest_path,
     )

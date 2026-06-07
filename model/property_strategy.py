@@ -12,7 +12,7 @@ Cashflow accounting:
     (a NEGATIVE tax means the user gets a refund / reduction in other tax — this is
     negative gearing.)
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 import numpy as np
 
@@ -72,6 +72,15 @@ class PropertyResult:
     overflow_share_terminal_value: float
     outside_cash_required_per_year: np.ndarray  # = max(0, -cashflow); used by shares strategy
     wealth_per_year: np.ndarray  # mark-to-market PRE-tax: value - balance + overflow_balance, per year
+    # --- Per-year breakdown arrays (length = horizon_years) ---
+    property_value_path: np.ndarray = field(default=None)        # end-of-year property value
+    loan_balance_path: np.ndarray = field(default=None)          # end-of-year loan balance
+    rent_path: np.ndarray = field(default=None)                  # gross rent after vacancy
+    interest_path: np.ndarray = field(default=None)              # loan interest per year
+    other_costs_path: np.ndarray = field(default=None)           # management + maintenance + land tax
+    depreciation_path: np.ndarray = field(default=None)          # depreciation (non-cash) per year
+    tax_path: np.ndarray = field(default=None)                   # tax on property income (negative = refund)
+    overflow_balance_path: np.ndarray = field(default=None)      # overflow share portfolio balance
     # --- Restricted regime traceability (zero under "current" regime) ---
     terminal_loss_pool_offset: float = 0.0           # pool $ used against post-commencement gain
     commencement_value: float = 0.0                  # property value at end of pre-commencement period
@@ -329,6 +338,16 @@ def simulate_property_trial(inputs: PropertyInputs) -> PropertyResult:
         overflow_share_terminal_value=overflow_share_terminal_value,
         outside_cash_required_per_year=outside_cash_required_per_year,
         wealth_per_year=wealth_per_year,
+        # Per-year breakdown arrays
+        property_value_path=value_path,
+        loan_balance_path=balance_path,
+        rent_path=rent_path,
+        interest_path=interest_path,
+        other_costs_path=management_path + maintenance_path + land_tax_path,
+        depreciation_path=depreciation_path,
+        tax_path=tax_on_property,
+        overflow_balance_path=overflow_balance_path,
+        # Restricted regime traceability
         terminal_loss_pool_offset=terminal_loss_pool_offset,
         commencement_value=commencement_value,
         pre_commencement_taxable_gain=pre_commencement_taxable_gain,
