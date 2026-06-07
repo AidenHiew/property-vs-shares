@@ -127,6 +127,19 @@ def mtr_from_income(income: float) -> float:
     return STAGE_3_BRACKETS[-1][1]
 
 
+def _corr_words(c: float) -> str:
+    """Plain-English reading of a property↔shares correlation value."""
+    if c <= -0.5:
+        return "tend to move in opposite directions"
+    if c < -0.1:
+        return "lean toward moving in opposite directions"
+    if c <= 0.1:
+        return "move mostly on their own (barely related)"
+    if c < 0.5:
+        return "mostly move on their own, with a slight tendency to move together"
+    return "tend to move up and down together"
+
+
 def _render_html(html: str) -> None:
     """Render raw HTML via st.markdown, stripping per-line indentation so the
     markdown parser doesn't treat indented lines as code blocks."""
@@ -418,14 +431,21 @@ with st.sidebar:
             format_func=lambda x: {"nominal": "Future $", "today": "Today's $"}[x],
             help="Today's $ adjusts future amounts for inflation so they're easier to relate to now.")
         st.markdown("**Market assumptions**")
-        property_growth_mu = st.slider("Property growth (avg/yr)", 0.0, 0.10, 0.055, step=0.005,
-                                       help="Long-run average capital growth.")
-        property_growth_sigma = st.slider("Property ups & downs (σ)", 0.05, 0.20, 0.11, step=0.01)
-        share_return_mu = st.slider("Share return (avg/yr)", 0.0, 0.15, 0.085, step=0.005)
-        share_return_sigma = st.slider("Share ups & downs (σ)", 0.05, 0.30, 0.15, step=0.01)
-        loan_rate_sigma = st.slider("Rate ups & downs (σ, pp)", 0.5, 2.0, 1.0, step=0.1) / 100
-        correlation = st.slider("Property–shares correlation", -1.0, 1.0, 0.3, step=0.05,
-                                help="How much property & shares move together. Most use 0.3.")
+        property_growth_mu = st.slider("Property growth (average per year)", 0.0, 10.0, 5.5, step=0.5,
+                                       format="%.1f%%", help="Long-run average capital growth.") / 100
+        property_growth_sigma = st.slider("Property ups & downs (a typical year's swing)", 5.0, 20.0, 11.0,
+                                          step=1.0, format="±%.0f%%") / 100
+        st.caption(f"A typical year lands within about ±{property_growth_sigma*100:.0f}% of the average.")
+        share_return_mu = st.slider("Share return (average per year)", 0.0, 15.0, 8.5, step=0.5,
+                                    format="%.1f%%") / 100
+        share_return_sigma = st.slider("Share ups & downs (a typical year's swing)", 5.0, 30.0, 15.0,
+                                       step=1.0, format="±%.0f%%") / 100
+        st.caption(f"A typical year lands within about ±{share_return_sigma*100:.0f}% of the average.")
+        loan_rate_sigma = st.slider("Mortgage-rate ups & downs (a typical year's swing)", 0.5, 2.0, 1.0,
+                                    step=0.1, format="±%.1f%%") / 100
+        correlation = st.slider("How together property & shares move", -1.0, 1.0, 0.3, step=0.05,
+                                help="−1 = move opposite · 0 = unrelated · +1 = move identically. Most use ~0.3.")
+        st.caption(f"At {correlation:.2f}: they {_corr_words(correlation)}.")
         return_distribution = st.selectbox(
             "Crash modelling", ["gaussian", "student_t"], index=0,
             format_func=lambda x: {"gaussian": "Normal (standard)",
@@ -436,13 +456,15 @@ with st.sidebar:
                          help="Lower = fatter tails. 5 ≈ historical equities; 30 ≈ normal.") \
             if return_distribution == "student_t" else 5
         vacancy_weeks = st.slider("Vacancy (weeks/yr)", 0, 8, 2)
-        vacancy_weeks_sigma = st.slider("Vacancy variability (σ wks)", 0.5, 4.0, 1.0, step=0.5)
-        cpi = st.slider("Inflation (CPI)", 0.0, 0.05, 0.025, step=0.005)
-        management_fee_pct = st.slider("Property manager fee %", 0.0, 0.12, 0.07, step=0.005)
-        maintenance_pct = st.slider("Upkeep (maintenance+insurance+rates) % of value/yr", 0.005, 0.030, 0.012, step=0.001)
+        vacancy_weeks_sigma = st.slider("Vacancy ups & downs (weeks)", 0.5, 4.0, 1.0, step=0.5)
+        cpi = st.slider("Inflation (per year)", 0.0, 5.0, 2.5, step=0.5, format="%.1f%%") / 100
+        management_fee_pct = st.slider("Property manager fee", 0.0, 12.0, 7.0, step=0.5, format="%.1f%%") / 100
+        maintenance_pct = st.slider("Upkeep — maintenance, insurance, rates (per year)", 0.5, 3.0, 1.2,
+                                    step=0.1, format="%.1f%%") / 100
         depreciation_override = st.number_input("Depreciation override ($/yr, 0 = auto)", value=0, step=500, min_value=0)
         depreciation_override = depreciation_override if depreciation_override > 0 else None
-        margin_loan_rate = st.slider("Margin loan rate (equal-leverage mode)", 0.05, 0.12, 0.075, step=0.005)
+        margin_loan_rate = st.slider("Margin loan rate (equal-leverage mode)", 5.0, 12.0, 7.5, step=0.5,
+                                     format="%.1f%%") / 100
         isolate_asset_quality = st.checkbox("Pin shares loan rate to mortgage rate", value=False)
         if property_age == "new_build":
             override_new_build_carveout = st.checkbox(
