@@ -1,0 +1,11 @@
+# Streamlit config — theme matches the app's design system, and disables
+# anonymous usage telemetry (privacy).
+[theme]
+primaryColor = "#16a34a"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f8f9fa"
+textColor = "#1a1a1a"
+font = "sans serif"
+
+[browser]
+gatherUsageStats = false
