@@ -17,7 +17,10 @@ from typing import Optional
 import numpy as np
 
 from config import BUILDING_COST_PCT, LAND_VALUE_PCT, SHARE_RETURN_FOR_OVERFLOW
-from model.tax import sa_land_tax, depreciation_for_year, cgt_payable, cgt_payable_indexed
+from model.tax import (
+    sa_land_tax, depreciation_for_year, cgt_payable, cgt_payable_indexed,
+    franking_credit_refund,
+)
 from model.inflation import inflate_series
 
 
@@ -57,6 +60,13 @@ class PropertyInputs:
     # here for simplicity per BACKLOG §1 note. Default 0.0 preserves backward
     # compatibility for tests that construct PropertyInputs directly without this field.
     acquisition_costs: float = 0.0
+    # Overflow share bucket tax assumptions. Positive property cashflow is reinvested
+    # in shares (same portfolio profile as the shares strategy); those shares bear
+    # franking-adjusted dividend tax annually and CGT at terminal sale. Defaults of 0.0
+    # mean "no dividend yield" (CGT still applies) for direct-construction callers; the
+    # Monte Carlo runner passes the portfolio profile's div_yield + franked portion.
+    overflow_dividend_yield: float = 0.0
+    overflow_franked_portion: float = 0.0
 
 
 @dataclass
@@ -214,19 +224,37 @@ def simulate_property_trial(inputs: PropertyInputs) -> PropertyResult:
 
     cashflow_per_year = pre_tax_cash - tax_on_property
 
-    # Overflow share portfolio: any positive year's cashflow is invested in shares.
-    # Use a constant share return for v1 (overflow is small; full Monte Carlo treatment
-    # lives on the shares strategy module). 8.5% pre-tax, no dividend tax drag (v1 simplification).
+    # Overflow share portfolio: any positive year's cashflow is invested in shares
+    # (same portfolio profile as the shares strategy). Modelled as a DRP holding so it
+    # bears the same tax drag as a real share investment:
+    #   - SHARE_RETURN_FOR_OVERFLOW (8.5%) total return splits into a dividend yield
+    #     (reinvested, DRP) and the residual capital growth.
+    #   - dividends bear franking-adjusted tax each year (paid out of the bucket).
+    #   - the terminal gain bears CGT (50% discount, held > 12 months) at sale.
+    # This removes the prior +0.5-1.2% bias from compounding the bucket untaxed.
+    overflow_div_yield = inputs.overflow_dividend_yield
+    overflow_capital_return = SHARE_RETURN_FOR_OVERFLOW - overflow_div_yield
     overflow_balance = 0.0
+    overflow_cost_base = 0.0
     overflow_balance_path = np.zeros(h)
     for year in range(h):
-        overflow_balance *= (1 + SHARE_RETURN_FOR_OVERFLOW)
+        # Dividends on the opening balance, taxed (franking-adjusted) and reinvested (DRP).
+        dividends = overflow_balance * overflow_div_yield
+        div_tax = franking_credit_refund(dividends, inputs.mtr, inputs.overflow_franked_portion)
+        overflow_balance *= (1 + overflow_capital_return)
+        overflow_balance += dividends - div_tax
+        overflow_cost_base += dividends  # reinvested dividends lift the cost base
+        # This year's property surplus is contributed at year-end (no growth this year).
         if cashflow_per_year[year] > 0:
             overflow_balance += cashflow_per_year[year]
-            # Note: future years' cashflow array is not affected — we just track the parallel bucket.
+            overflow_cost_base += cashflow_per_year[year]
         overflow_balance_path[year] = overflow_balance
 
-    overflow_share_terminal_value = overflow_balance
+    # Terminal CGT on the overflow gain (whole bucket held > 12 months → 50% discount,
+    # mirroring the shares strategy's terminal-CGT simplification).
+    overflow_gain = overflow_balance - overflow_cost_base
+    overflow_cgt = cgt_payable(overflow_gain, holding_years=h, mtr=inputs.mtr)
+    overflow_share_terminal_value = overflow_balance - overflow_cgt
 
     # Mark-to-market wealth per year (PRE-tax of hypothetical sale CGT).
     # Used for path visualisation. Differs from terminal_after_tax_wealth at year h-1

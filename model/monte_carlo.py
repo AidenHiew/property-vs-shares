@@ -170,6 +170,10 @@ def run_monte_carlo(
             selling_costs_pct=0.025,
             acquisition_costs=stamp_duty + buying_costs,
             property_regime=property_regime,
+            # Overflow shares use the same portfolio profile as the shares strategy,
+            # so the reinvested-surplus bucket bears the same dividend tax + CGT drag.
+            overflow_dividend_yield=PORTFOLIO_PROFILES[portfolio_profile]["div_yield"],
+            overflow_franked_portion=PORTFOLIO_PROFILES[portfolio_profile]["franked"],
         )
         p_result = simulate_property_trial(p_inputs)
 

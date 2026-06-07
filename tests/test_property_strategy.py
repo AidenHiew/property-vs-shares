@@ -137,6 +137,37 @@ def test_property_negatively_geared_overflow_is_zero():
     assert result.overflow_share_terminal_value == 0.0
 
 
+def test_overflow_bucket_bears_dividend_tax_and_cgt():
+    """The overflow share bucket must bear annual franking-adjusted dividend tax
+    AND terminal CGT — removing the +0.5–1.2% bias from the old untaxed 8.5%
+    compounding. Terminal value must sit below both the old untaxed behaviour
+    and a CGT-only (no-dividend) variant (proving dividend tax specifically bites).
+    """
+    inputs = make_default_inputs()
+    inputs.gross_yield = 0.08  # positively geared every year → real overflow
+    inputs.overflow_dividend_yield = 0.035
+    inputs.overflow_franked_portion = 0.50
+    taxed = simulate_property_trial(inputs)
+
+    # Old (buggy) behaviour: compound each year's surplus at 8.5%, untaxed.
+    cf = taxed.cashflow_per_year
+    untaxed = 0.0
+    for y in range(inputs.horizon_years):
+        untaxed *= 1.085
+        if cf[y] > 0:
+            untaxed += cf[y]
+
+    # CGT-only variant: no dividend yield (so no dividend tax), terminal CGT still applies.
+    cgt_only_inputs = make_default_inputs()
+    cgt_only_inputs.gross_yield = 0.08
+    cgt_only_inputs.overflow_dividend_yield = 0.0
+    cgt_only = simulate_property_trial(cgt_only_inputs)
+
+    assert taxed.overflow_share_terminal_value > 0
+    assert taxed.overflow_share_terminal_value < untaxed
+    assert taxed.overflow_share_terminal_value < cgt_only.overflow_share_terminal_value
+
+
 # =============================================================================
 # Federal Budget 2026-27 — restricted_2027 regime tests
 # =============================================================================
