@@ -6,9 +6,11 @@ See full design spec at `../2026-05-11-property-vs-shares-design-v2.md`.
 
 ## Status
 
-**v1 shipped 2026-05-11.** **v1.1 + UI redesign shipped 2026-05-16** (all original v1.1 BACKLOG
-items + 4 finance-expert recommendations + Budget 2026-27 regime modelling + recommendation-first
-UI). 95/95 tests passing.
+**v1 shipped 2026-05-11.** **v1.1 + UI redesign shipped 2026-05-16.** **v2 (2026-06-07):** full
+"mum & dad" usability redesign — plain-English recommendation-first UI, year-by-year breakdown
+(wealth fan chart + per-year financial table), income→tax-rate, not-financial-advice disclaimer,
+input validation, URL-shareable scenarios, semantic-colour design system, and a finance fix that
+taxes the overflow share bucket (dividend tax + terminal CGT). **123/123 tests passing.**
 
 **Headline finding for the default scenario under restricted_2027 regime:** the optimal allocation
 is **~60% property / 40% shares**, not 100% property — beyond 60% the strategy is solvent in fewer
@@ -28,6 +30,18 @@ streamlit run app.py
 ```
 
 Browser opens to a tool with sliders. Drag them, see the headline change live.
+
+## Deploy (shareable link for non-technical users)
+
+Hosted free on **Streamlit Community Cloud** straight from this GitHub repo:
+
+1. Go to [share.streamlit.io](https://share.streamlit.io) and sign in with the GitHub account that owns this repo.
+2. **Create app** → pick `AidenHiew/property-vs-shares`, branch `main`, main file `app.py`.
+3. Under **Advanced settings**, set Python version to **3.13** (the repo targets 3.11–3.13; the local
+   `.venv` is 3.14 but Cloud doesn't use it).
+4. **Deploy.** Dependencies install from `requirements.txt`; the app is then a URL anyone can open.
+
+A tuned scenario lives in the page URL (query params), so you can bookmark or share a specific setup.
 
 ## Test
 
