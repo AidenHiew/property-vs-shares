@@ -153,21 +153,27 @@ def render_shares_build_chart(result, horizon, deflate, yearly_deflator):
     """Stacked-area chart showing what builds the share value over time."""
     def med(key): return _median_path(result, key, deflate, yearly_deflator)
     years = np.arange(1, horizon + 1)
+    sval = med("shares_wealth_path")
     inj = np.cumsum(med("shares_contribution_path"))
     div = np.cumsum(med("shares_dividend_path"))
     grow = np.cumsum(med("shares_capital_growth_path"))
+    # Starting capital (the upfront deposit + costs deployed into shares) is the
+    # base the other three build on. Recover it as the residual so the stack
+    # reconciles exactly to the share value: base = value - injected - dividends - growth.
+    base = np.maximum(sval - inj - div - grow, 0)
     fig = go.Figure()
-    for name, y, color in [("Cash injected", inj, TEAL),
+    for name, y, color in [("Starting capital", base, MUTED),
+                           ("Cash injected", inj, TEAL),
                            ("Dividends reinvested", div, GREEN),
                            ("Market growth", grow, AMBER)]:
         fig.add_trace(go.Scatter(x=years, y=y, name=name, mode="lines",
                                  stackgroup="one", line=dict(width=0.5, color=color)))
     fig.update_layout(height=320, margin=dict(l=0, r=0, t=10, b=0),
                       legend=dict(orientation="h", y=-0.2),
-                      yaxis_title="Cumulative $", xaxis_title="Year")
+                      yaxis_title="Share value ($)", xaxis_title="Year")
     st.plotly_chart(fig, width="stretch")
-    st.caption("What builds your median share value over time: the cash you put in, the dividends reinvested, "
-               "and market growth — stacked to the running total.")
+    st.caption("What builds your median share value over time: the starting capital, the cash you inject each "
+               "year, dividends reinvested, and market growth — stacked to the running share value.")
 
 
 # ============================================================================
@@ -549,7 +555,8 @@ with st.expander("🏛 Setup & tax rules used"):
         st.markdown(f"- {nme}")
     _render_html(f"""
 <ul>
-<li><b>Tax:</b> SA, marginal rate {mtr:.0%} (from <span>${income:,}</span> income), FY2026 brackets</li>
+<li><b>Income tax:</b> marginal rate {mtr:.0%} (from <span>${income:,}</span> income), FY2026 brackets — federal, held flat for the period</li>
+<li><b>Stamp duty:</b> {state} schedule (FY2025-26)</li>
 <li><b>Property:</b> {property_age.replace('_', ' ').title()}, {asset_type.title()}, {_fmt_pct(gross_yield)} yield</li>
 <li><b>Upfront cash:</b> <span>{_fmt_money(upfront)}</span> (<span>{_fmt_money(deposit)}</span> deposit + <span>{_fmt_money(stamp_duty_amount)}</span> stamp duty + <span>${buying_costs:,}</span> buying costs)</li>
 <li><b>Shares profile:</b> {portfolio_profile.replace('_', ' ').title()} (avg {PORTFOLIO_PROFILES[portfolio_profile]['return_mu']:.1%}, {PORTFOLIO_PROFILES[portfolio_profile]['franked']:.0%} franked)</li>
