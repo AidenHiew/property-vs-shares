@@ -19,6 +19,7 @@ from ui.common import (GREEN, TEAL, AMBER, RED, AMBER_DK, INK, MUTED, FAINT, LIN
                        GLOBAL_CSS, _render_html, _fmt_money, _fmt_dollars, _fmt_pct)
 from ui.persona import (compute_persona_sweep, find_optimal_mix,
                         render_persona_cards, render_comparison_table)
+from ui.onboarding import render_hero, render_limitations, render_full_guide
 
 
 # ============================================================================
@@ -149,12 +150,7 @@ def render_year_by_year_table(result, horizon, mix_pct, deflate, yearly_deflator
 st.set_page_config(page_title="Property vs Shares", layout="wide", page_icon="🏠")
 _render_html(GLOBAL_CSS)
 
-_render_html("""
-<div class="pvs-h1">🏠 Property vs Shares — should you buy a rental, buy shares, or mix both?</div>
-<div class="pvs-sub">This tool simulates <b>5,000 possible 25-year futures</b> for your situation and shows the
-likely wealth, the risk of running short on cash, and the property/shares mix that best fits your comfort with risk.
-It's a <b>what-if explorer, not a prediction or financial advice.</b> Set your numbers in the sidebar →</div>
-""")
+render_hero()
 
 # ---------------------------------------------------------------------------
 # Sidebar inputs (plain-English, grouped, URL-persisted)
@@ -418,6 +414,8 @@ property-share of your savings toward the property and the rest into shares. It 
 Next step: talk to a licensed financial adviser about your loan approval, tax, and goals.
 </div>""")
 
+render_limitations()
+
 st.markdown("---")
 
 # ---------------------------------------------------------------------------
@@ -502,6 +500,8 @@ with st.expander("🎲 Range of outcomes & cashflow stress"):
                       height=360, margin=dict(t=50), hovermode="x unified")
     fig2.update_xaxes(gridcolor="#f0f0f0"); fig2.update_yaxes(gridcolor="#f0f0f0")
     st.plotly_chart(fig2, width="stretch")
+
+render_full_guide()
 
 with st.expander("🏛 Setup & tax rules used"):
     notes = []
