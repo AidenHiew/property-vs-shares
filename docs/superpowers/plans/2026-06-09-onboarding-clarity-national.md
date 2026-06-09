@@ -20,8 +20,11 @@
 - `model/monte_carlo.py` — MODIFY. Thread `state` + `annual_land_tax` through.
 - `ui/__init__.py`, `ui/onboarding.py`, `ui/persona.py` — NEW. Extract render + persona-state logic out of `app.py`.
 - `app.py` — MODIFY. State dropdown, land-tax field, wire new modules, URL `persona` param, disclaimer, `$` audit, single CSS injection.
-- `tests/test_duty.py`, `tests/test_land_tax_flat.py`, `tests/test_persona_control.py` — NEW.
+- `model/shares_strategy.py`, `model/monte_carlo.py` — MODIFY (Phase E). Surface `shares_contribution_path` + `shares_capital_growth_path`.
+- `tests/test_duty.py`, `tests/test_land_tax_flat.py`, `tests/test_persona_control.py`, `tests/test_shares_breakdown_paths.py` — NEW.
 - `mock_hero.py` — DELETE at end.
+
+**Phases:** A (national tax) · B (persona control) · C (onboarding) · D (bugs/cleanup) · E (symmetric shares breakdown). Each ships independently.
 
 ---
 
@@ -720,6 +723,194 @@ Expected: PASS (123 + new tests)
 ```bash
 git add app.py ui/ && git rm mock_hero.py
 git commit -m "fix(app): $ LaTeX audit, national disclaimer, single CSS inject, drop mock"
+```
+
+---
+
+# PHASE E — Symmetric shares breakdown
+
+## Task E1: Surface `shares_contribution_path` + `shares_capital_growth_path`
+
+**Files:**
+- Test: `tests/test_shares_breakdown_paths.py`
+- Modify: `model/shares_strategy.py` (`SharesResult` + `simulate_shares_trial`), `model/monte_carlo.py` (allocate + surface)
+
+- [ ] **Step 1: Write a failing test that the new per-year paths exist and reconcile**
+
+```python
+# tests/test_shares_breakdown_paths.py
+import numpy as np
+from model.shares_strategy import SharesInputs, simulate_shares_trial
+
+def _inputs(h=5):
+    return SharesInputs(
+        initial_capital=200_000, share_return_path=np.full(h, 0.08),
+        dividend_yield_pct=0.03, franked_portion=0.8, mer=0.002,
+        brokerage_per_trade=20, drp=True, mtr=0.37,
+        external_contributions=np.full(h, 10_000.0), horizon_years=h,
+        margin_loan_initial=0.0, margin_loan_rate_path=None,
+    )
+
+def test_new_paths_present_and_length():
+    r = simulate_shares_trial(_inputs())
+    assert r.contribution_path.shape == (5,)
+    assert r.capital_growth_path.shape == (5,)
+
+def test_contribution_path_matches_inputs():
+    r = simulate_shares_trial(_inputs())
+    assert np.allclose(r.contribution_path, 10_000.0)
+
+def test_capital_growth_is_price_slice():
+    # capital_return = total(0.08) - dividend(0.03) = 0.05; year-1 growth = initial_capital * 0.05
+    r = simulate_shares_trial(_inputs())
+    assert r.capital_growth_path[0] == 200_000 * (0.08 - 0.03)
+```
+
+- [ ] **Step 2: Run to verify failure**
+
+Run: `.venv/bin/python -m pytest tests/test_shares_breakdown_paths.py -v`
+Expected: FAIL — `SharesResult` has no `contribution_path`.
+
+- [ ] **Step 3: Add two fields to `SharesResult`** (in `model/shares_strategy.py`, after `margin_interest_path`):
+```python
+    contribution_path: np.ndarray = field(default=None)       # external cash injected per year
+    capital_growth_path: np.ndarray = field(default=None)     # price-appreciation $ per year
+```
+
+- [ ] **Step 4: Populate them inside `simulate_shares_trial`.** Add arrays near the other path inits:
+```python
+    contribution_path = np.zeros(h)
+    capital_growth_path = np.zeros(h)
+```
+At the top of the `for year in range(h):` loop, capture the pre-growth value and record growth right where capital return is applied:
+```python
+        pv_before = portfolio_value
+        ...
+        capital_growth_path[year] = pv_before * capital_return
+        portfolio_value = portfolio_value * (1 + capital_return)
+```
+After `portfolio_value += inputs.external_contributions[year]`:
+```python
+        contribution_path[year] = inputs.external_contributions[year]
+```
+Add both to the `return SharesResult(...)`:
+```python
+        contribution_path=contribution_path,
+        capital_growth_path=capital_growth_path,
+```
+
+- [ ] **Step 5: Surface in `model/monte_carlo.py`.** Allocate (near line 147):
+```python
+    s_contribution_path = np.zeros((trials, horizon_years))
+    s_capital_growth_path = np.zeros((trials, horizon_years))
+```
+Assign in the trial loop (near line 222):
+```python
+        s_contribution_path[t] = s_result.contribution_path
+        s_capital_growth_path[t] = s_result.capital_growth_path
+```
+Add to the returned dict (near line 275):
+```python
+        "shares_contribution_path": s_contribution_path,
+        "shares_capital_growth_path": s_capital_growth_path,
+```
+
+- [ ] **Step 6: Run new + full suite**
+
+Run: `.venv/bin/python -m pytest tests/test_shares_breakdown_paths.py -q && .venv/bin/python -m pytest -q`
+Expected: PASS
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add model/shares_strategy.py model/monte_carlo.py tests/test_shares_breakdown_paths.py
+git commit -m "feat(shares): surface per-year contribution + capital-growth paths"
+```
+
+## Task E2: Split breakdown into two tables + stacked-area build chart
+
+**Files:**
+- Modify: `app.py:548` (deflation keys), `app.py:322-356` (split table), the chart section (~287-319), `ui/` as appropriate
+
+- [ ] **Step 1: Add the new keys to the deflation `per_year_keys` list** (app.py:548-555), so Today's-$ mode scales them:
+```python
+        "shares_contribution_path", "shares_capital_growth_path",
+```
+
+- [ ] **Step 2: Rename the existing table to property-only and add a shares table.** Replace `render_year_by_year_table` with two functions. Property table = existing columns minus the "Shares value"/"Mix wealth" tail (keep those in a combined summary or move Mix to the shares table footer). Concretely:
+
+```python
+def render_property_year_table(result, horizon, deflate, yearly_deflator):
+    def med(key): return _median_path(result, key, deflate, yearly_deflator)
+    value, balance = med("property_value_path"), med("property_loan_balance_path")
+    rent, interest = med("property_rent_path"), med("property_interest_path")
+    tax, pcash = med("property_tax_path"), med("property_cashflow_path")
+    cols = ["Year", "Property value", "Loan balance", "Your equity", "Net rent",
+            "Loan interest", "Tax benefit", "Property cashflow"]
+    head = "".join(f"<th>{c}</th>" for c in cols)
+    body = ""
+    for i in range(horizon):
+        cells = [f"{i+1}", _fmt_dollars(value[i]), _fmt_dollars(balance[i]),
+                 _fmt_dollars(value[i]-balance[i]), _fmt_dollars(rent[i]),
+                 _fmt_dollars(interest[i]), _fmt_dollars(-tax[i]), _fmt_dollars(pcash[i])]
+        body += "<tr>" + "".join(f"<td>{c}</td>" for c in cells) + "</tr>"
+    _render_html(f'<div class="tbl-wrap"><table class="tbl"><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>')
+
+def render_shares_year_table(result, horizon, deflate, yearly_deflator):
+    def med(key): return _median_path(result, key, deflate, yearly_deflator)
+    inj = med("shares_contribution_path")
+    div = med("shares_dividend_path")
+    grow = med("shares_capital_growth_path")
+    dtax = med("shares_dividend_tax_path")
+    sval = med("shares_wealth_path")
+    cols = ["Year", "Cash injected", "Dividends reinvested", "Capital growth",
+            "Dividend tax", "Share value"]
+    head = "".join(f"<th>{c}</th>" for c in cols)
+    body = ""
+    for i in range(horizon):
+        cells = [f"{i+1}", _fmt_dollars(inj[i]), _fmt_dollars(div[i]),
+                 _fmt_dollars(grow[i]), _fmt_dollars(dtax[i]), _fmt_dollars(sval[i])]
+        body += "<tr>" + "".join(f"<td>{c}</td>" for c in cells) + "</tr>"
+    _render_html(f'<div class="tbl-wrap"><table class="tbl"><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>')
+    st.caption("Cash injected = the same out-of-pocket cash the property needs each year, invested in shares "
+               "instead. Dividends reinvested + capital growth build the share value. Figures are medians; "
+               "dividend tax is net of franking credits.")
+```
+At the call site inside the year-by-year expander, render a property subheading + `render_property_year_table(...)`, then a shares subheading + `render_shares_year_table(...)`.
+
+- [ ] **Step 3: Add the stacked-area "What builds your share value" chart.** Add a function and call it in the same expander, above the shares table:
+```python
+def render_shares_build_chart(result, horizon, deflate, yearly_deflator):
+    def med(key): return _median_path(result, key, deflate, yearly_deflator)
+    years = np.arange(1, horizon + 1)
+    inj = np.cumsum(med("shares_contribution_path"))
+    div = np.cumsum(med("shares_dividend_path"))
+    grow = np.cumsum(med("shares_capital_growth_path"))
+    fig = go.Figure()
+    for name, y, color in [("Cash injected", inj, TEAL),
+                           ("Dividends reinvested", div, GREEN),
+                           ("Market growth", grow, AMBER)]:
+        fig.add_trace(go.Scatter(x=years, y=y, name=name, mode="lines",
+                                 stackgroup="one", line=dict(width=0.5, color=color)))
+    fig.update_layout(height=320, margin=dict(l=0, r=0, t=10, b=0),
+                      legend=dict(orientation="h", y=-0.2),
+                      yaxis_title="Cumulative $", xaxis_title="Year")
+    st.plotly_chart(fig, width="stretch")
+    st.caption("What builds your median share value over time: the cash you put in, the dividends reinvested, "
+               "and market growth — stacked to the running total.")
+```
+
+- [ ] **Step 4: Boot + visual check**
+
+Run: boot :8503, open the Year-by-year expander, screenshot. Confirm: a Property table, a Shares table with the 6 columns, and the stacked-area build chart; numbers reconcile (share value ≈ cumulative injected + dividends + growth, allowing for MER/tax drag).
+
+- [ ] **Step 5: Run full suite + commit**
+
+Run: `.venv/bin/python -m pytest -q`
+Expected: PASS
+```bash
+git add app.py ui/
+git commit -m "feat(breakdown): symmetric shares table + share-value build chart"
 ```
 
 ---

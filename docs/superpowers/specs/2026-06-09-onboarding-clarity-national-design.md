@@ -186,6 +186,29 @@ price >= 5_000_000:             0.0595 * price   # flat of full value
 
 ---
 
+## Part 5 — Symmetric shares breakdown (table + build chart)
+
+**Problem:** The year-by-year breakdown gives property 8 columns ([app.py:336](app.py)) but shares only ONE ("Shares value"). Users can't see *how* share value grows — cash injected vs dividends reinvested vs market growth — so the comparison feels unfair/opaque.
+
+**Solution:**
+- **Split the single breakdown table into two parallel tables:** "Property — year by year" (existing columns, unchanged) and a new "Shares — year by year".
+- **Shares table columns (full parity):** `Year · Cash injected · Dividends reinvested · Capital growth · Dividend tax · Share value`.
+  - *Cash injected* = the year's external contribution (= property's out-of-pocket cash; identical by design — this is the fair-comparison anchor).
+  - *Dividends reinvested* = gross dividends (DRP on).
+  - *Capital growth* = price-appreciation slice of the portfolio that year.
+  - *Dividend tax* = net dividend tax paid (after franking).
+  - *Share value* = end-of-year mark-to-market (existing).
+- **New stacked-area "What builds your share value" chart:** cumulative cash injected + cumulative reinvested dividends + cumulative market growth, stacking up to the median share-value line. Visual parity with the property equity story.
+
+**Engine surfacing (most data already exists):**
+- Already surfaced: `shares_dividend_path`, `shares_dividend_tax_path`, `shares_wealth_path`.
+- **NEW per-year paths to add** to `SharesResult` + `run_monte_carlo` output:
+  - `shares_contribution_path` — the `external_contributions` array per trial (currently set at [monte_carlo.py:200](model/monte_carlo.py) but not surfaced).
+  - `shares_capital_growth_path` — `portfolio_value_before_year × capital_return` per year (the price-appreciation $; `capital_return = total_return − dividend_yield`, already computed inside `simulate_shares_trial`, [shares_strategy.py:75-76](model/shares_strategy.py)).
+- Both new paths must be added to the deflation `per_year_keys` list ([app.py:548](app.py)) so Today's-$ mode scales them.
+
+**Files:** `model/shares_strategy.py` (two new `SharesResult` fields + populate them), `model/monte_carlo.py` (allocate + surface the two arrays), `app.py`/`ui/` (split table into two; new stacked-area chart; add keys to deflation list).
+
 ## Testing
 
 - **Duty evaluator — mandated boundary points** (assert exact official values, including the legislated jumps — do NOT write a monotonic-continuity assertion):
