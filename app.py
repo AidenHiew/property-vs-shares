@@ -299,7 +299,9 @@ st.query_params.update({k: str(v) for k, v in {
     "age": ["new_build", "established_post_2017", "established_pre_2017"].index(property_age),
     "atype": ["house", "apartment", "townhouse"].index(asset_type),
     "income": income, "rate": round(loan_rate * 100, 1), "yrs": horizon, "topup": max_top_up,
-    "landtax": annual_land_tax, "mix": property_share_mix_pct,
+    "landtax": annual_land_tax,
+    "persona": (st.session_state["persona_pick"] if "persona_pick" in st.session_state else qp("persona", str, "Balanced")),
+    **({"mix": property_share_mix_pct} if (st.session_state["persona_pick"] if "persona_pick" in st.session_state else qp("persona", str, "Balanced")) == "Custom" else {}),
     "port": ["asx_only", "global", "blended"].index(portfolio_profile),
     "regime": ["current", "restricted_2027"].index(property_regime),
     "state": state,
@@ -369,6 +371,8 @@ balanced = find_optimal_mix(sweep_rows, 0.95)
 PERSONA_TO_THRESHOLD = {"Safe": 0.99, "Balanced": 0.95, "Wealth Maximizer": 0.85}
 options = ["Safe", "Balanced", "Wealth Maximizer", "Custom"]
 label_map = {k: (k + " ★" if k == "Balanced" and not stale else k) for k in options}
+if stale:
+    st.caption("Recommendations are stale — click ↻ Update recommendations.")
 picked = st.segmented_control(
     "View breakdown for", options, format_func=lambda k: label_map[k],
     default=qp("persona", str, "Balanced"), key="persona_pick",

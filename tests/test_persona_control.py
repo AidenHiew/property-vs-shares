@@ -42,3 +42,23 @@ def test_custom_enables_slider():
         custom_sliders = [sl for sl in sliders if "Custom mix" in (sl.label or "")]
         assert custom_sliders, "Expected a 'Custom mix' slider"
         assert not custom_sliders[0].disabled, "Expected Custom mix slider to be enabled"
+
+
+def test_persona_url_param_selects_wealth():
+    from streamlit.testing.v1 import AppTest
+    at = AppTest.from_file("app.py", default_timeout=90)
+    at.query_params["persona"] = "Wealth Maximizer"
+    at.run()
+    # Either the segmented control reflects it, or session_state carries it.
+    segs = at.get("segmented_control")
+    if segs:
+        assert segs[0].value == "Wealth Maximizer"
+    else:
+        # at.session_state doesn't support .get() in Streamlit 1.57; use try/except
+        try:
+            val = at.session_state["persona_pick"]
+        except KeyError:
+            val = None
+        assert val == "Wealth Maximizer", (
+            f"Expected persona_pick=='Wealth Maximizer', got {val!r}"
+        )
