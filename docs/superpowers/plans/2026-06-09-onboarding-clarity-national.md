@@ -510,12 +510,12 @@ else:
 recommended_mix = breakdown_mix_pct
 ```
 
-- [ ] **Step 4: Make the breakdown use `breakdown_mix_pct`.** The main run at line 538 currently uses `property_share_mix` (derived from the sidebar slider). Change the breakdown/headline run to use the picked mix:
+- [ ] **Step 4: Relocate the result computation so it follows the picked persona.** This is a block move, not a one-line change. Currently the order is: `result = cached_run(...)` (line 538) → deflation block (540–558) → persona section (563–595) → headline (599+). Cut the **entire block lines 538–558** (the `result = cached_run(trials=5000, property_share_mix=property_share_mix, **run_kwargs)` line PLUS the whole `deflate = ...` / `per_year_keys` deflation block) and paste it **immediately after the persona-pick code from Step 3** (after `recommended_mix = breakdown_mix_pct`) and **before the headline at line ~599**. In the moved `cached_run` call, change the mix argument:
 ```python
 breakdown_mix = breakdown_mix_pct / 100
 result = cached_run(trials=5000, property_share_mix=breakdown_mix, **run_kwargs)
 ```
-Move the `result = cached_run(...)` call to AFTER the persona control so `breakdown_mix` is defined (the headline/tiles/breakdown all consume `result`). The persona sweep (2,000 trials) still runs before, independently.
+The persona sweep (563–587, 2,000 trials) does NOT consume `result`, so it stays where it is and runs first. After the move the order is: sweep → cards → persona pick → `result` (5,000 trials, picked mix) → deflation → headline/tiles/breakdown. Verify nothing between old-538 and the headline references `result` before its new position (grep `result\[` in 559–598; expected: none).
 
 - [ ] **Step 5: Reframe the sidebar mix slider as "Custom mix (advanced)" and disable unless Custom.** Where `property_share_mix_pct` is defined in the sidebar:
 ```python
@@ -876,7 +876,16 @@ def render_shares_year_table(result, horizon, deflate, yearly_deflator):
                "instead. Dividends reinvested + capital growth build the share value. Figures are medians; "
                "dividend tax is net of franking credits.")
 ```
-At the call site inside the year-by-year expander, render a property subheading + `render_property_year_table(...)`, then a shares subheading + `render_shares_year_table(...)`.
+**Update the call site** at [app.py:644](app.py) — the old `render_year_by_year_table(result, horizon, property_share_mix_pct, deflate, yearly_deflator)` becomes:
+```python
+st.markdown("**Property — year by year**")
+render_property_year_table(result, horizon, deflate, yearly_deflator)
+render_shares_build_chart(result, horizon, deflate, yearly_deflator)   # Step 3
+st.markdown("**Shares — year by year**")
+render_shares_year_table(result, horizon, deflate, yearly_deflator)
+```
+
+**Mix wealth column (don't lose it):** the old table appended a "Mix wealth" column when `mix_pct < 100`. Preserve it as a trailing column on the **shares** table when `breakdown_mix_pct < 100` — add `med("mixed_wealth_path")` and, inside `render_shares_year_table`, accept a `mix_pct` arg, append `"Mix wealth"` to `cols` and the value to `cells` when `mix_pct < 100`. Pass `breakdown_mix_pct` at the call site.
 
 - [ ] **Step 3: Add the stacked-area "What builds your share value" chart.** Add a function and call it in the same expander, above the shares table:
 ```python
