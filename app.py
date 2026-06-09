@@ -205,8 +205,12 @@ with st.sidebar:
     )
 
     st.markdown("**The choice**")
-    property_share_mix_pct = st.slider("Property share of your money %", 0, 100, qp("mix", int, 100), step=5,
-                                       help="100% = all-in on property. 0% = all shares. In between = a blend.")
+    _custom = st.session_state.get("persona_pick") == "Custom"
+    property_share_mix_pct = st.slider(
+        "Custom mix (% property)", 0, 100, qp("mix", int, 50), step=10,
+        disabled=not _custom,
+        help="Enabled when you pick 'Custom' above. Otherwise the chosen persona sets the mix.",
+    )
     property_share_mix = property_share_mix_pct / 100
     portfolio_profile = st.selectbox(
         "If you bought shares, which?", ["asx_only", "global", "blended"], index=qp("port", int, 2),
@@ -335,28 +339,6 @@ def cached_run(**kwargs):
     return run_monte_carlo(**kwargs)
 
 
-result = cached_run(trials=5000, property_share_mix=property_share_mix, **run_kwargs)
-
-# Deflation to today's dollars
-deflate = display_mode == "today"
-yearly_deflator = (1 + cpi) ** np.arange(1, horizon + 1)
-if deflate:
-    term_deflator = (1 + cpi) ** horizon
-    for k in ["property_terminal_wealth", "shares_terminal_wealth", "median_property_wealth",
-              "median_shares_wealth", "mixed_terminal_wealth", "median_mixed_wealth"]:
-        result[k] = result[k] / term_deflator
-    per_year_keys = [
-        "outside_cash_per_trial_year", "mixed_outside_cash_per_trial_year",
-        "property_wealth_path", "shares_wealth_path", "mixed_wealth_path",
-        "property_value_path", "property_loan_balance_path", "property_rent_path",
-        "property_interest_path", "property_other_costs_path", "property_depreciation_path",
-        "property_tax_path", "property_cashflow_path", "property_overflow_path",
-        "shares_dividend_path", "shares_dividend_tax_path", "shares_cashflow_path",
-    ]
-    for k in per_year_keys:
-        result[k] = result[k] / yearly_deflator
-    result["worst_year_cash"] = float(np.percentile(result["outside_cash_per_trial_year"].max(axis=1), 90))
-
 # ---------------------------------------------------------------------------
 # Recommendation (perf: sweep runs only on demand, not every slider drag)
 # ---------------------------------------------------------------------------
@@ -384,7 +366,45 @@ sweep_rows = st.session_state["sweep_rows"]
 
 render_persona_cards(sweep_rows, horizon)
 balanced = find_optimal_mix(sweep_rows, 0.95)
-recommended_mix = balanced["mix_pct"] if balanced else None
+PERSONA_TO_THRESHOLD = {"Safe": 0.99, "Balanced": 0.95, "Wealth Maximizer": 0.85}
+options = ["Safe", "Balanced", "Wealth Maximizer", "Custom"]
+label_map = {k: (k + " ★" if k == "Balanced" and not stale else k) for k in options}
+picked = st.segmented_control(
+    "View breakdown for", options, format_func=lambda k: label_map[k],
+    default=qp("persona", str, "Balanced"), key="persona_pick",
+)
+if picked is None:
+    picked = "Balanced"
+if picked == "Custom":
+    breakdown_mix_pct = property_share_mix_pct
+else:
+    _row = find_optimal_mix(sweep_rows, PERSONA_TO_THRESHOLD[picked])
+    breakdown_mix_pct = _row["mix_pct"] if _row else (balanced["mix_pct"] if balanced else 50)
+recommended_mix = breakdown_mix_pct
+
+# Run simulation for the selected breakdown mix
+breakdown_mix = breakdown_mix_pct / 100
+result = cached_run(trials=5000, property_share_mix=breakdown_mix, **run_kwargs)
+
+# Deflation to today's dollars
+deflate = display_mode == "today"
+yearly_deflator = (1 + cpi) ** np.arange(1, horizon + 1)
+if deflate:
+    term_deflator = (1 + cpi) ** horizon
+    for k in ["property_terminal_wealth", "shares_terminal_wealth", "median_property_wealth",
+              "median_shares_wealth", "mixed_terminal_wealth", "median_mixed_wealth"]:
+        result[k] = result[k] / term_deflator
+    per_year_keys = [
+        "outside_cash_per_trial_year", "mixed_outside_cash_per_trial_year",
+        "property_wealth_path", "shares_wealth_path", "mixed_wealth_path",
+        "property_value_path", "property_loan_balance_path", "property_rent_path",
+        "property_interest_path", "property_other_costs_path", "property_depreciation_path",
+        "property_tax_path", "property_cashflow_path", "property_overflow_path",
+        "shares_dividend_path", "shares_dividend_tax_path", "shares_cashflow_path",
+    ]
+    for k in per_year_keys:
+        result[k] = result[k] / yearly_deflator
+    result["worst_year_cash"] = float(np.percentile(result["outside_cash_per_trial_year"].max(axis=1), 90))
 
 # "What now?" guidance
 _render_html(f"""
@@ -420,8 +440,8 @@ else:
                    f"{_fmt_money(max_top_up)} ceiling. Consider more shares or a bigger deposit.")
 _render_html(f'<div class="flag {flag[0]}">{flag[1]}</div>')
 
-if property_share_mix < 1.0:
-    pp = int(property_share_mix * 100)
+if breakdown_mix < 1.0:
+    pp = int(breakdown_mix * 100)
     _render_html(f"""<div class="pvs-section-sub" style="margin-top:8px;">Your chosen mix
     ({pp}% property / {100-pp}% shares) beats pure shares in <b>{result['p_mix_beats_pure_shares']:.0%}</b>
     of futures · median wealth {_fmt_money(result['median_mixed_wealth'])} · stays solvent {result['p_mix_solvent']:.0%}.</div>""")
@@ -440,8 +460,8 @@ _render_html(f"""
 # Detail expanders
 # ---------------------------------------------------------------------------
 with st.expander("📈 Year-by-year breakdown (chart + table)"):
-    render_year_by_year_chart(result, horizon, property_share_mix_pct, deflate, yearly_deflator)
-    render_year_by_year_table(result, horizon, property_share_mix_pct, deflate, yearly_deflator)
+    render_year_by_year_chart(result, horizon, breakdown_mix_pct, deflate, yearly_deflator)
+    render_year_by_year_table(result, horizon, breakdown_mix_pct, deflate, yearly_deflator)
 
 with st.expander("⚖️ Compare all property/shares mixes"):
     render_comparison_table(sweep_rows, recommended_mix)
@@ -452,9 +472,9 @@ with st.expander("🎲 Range of outcomes & cashflow stress"):
                   opacity=0.65, nbinsx=40, marker_color=AMBER))
     fig.add_trace(go.Histogram(x=result["shares_terminal_wealth"], name="Shares",
                   opacity=0.65, nbinsx=40, marker_color=TEAL))
-    if property_share_mix < 1.0:
+    if breakdown_mix < 1.0:
         fig.add_trace(go.Histogram(x=result["mixed_terminal_wealth"],
-                      name=f"Mix ({property_share_mix_pct}/{100-property_share_mix_pct})",
+                      name=f"Mix ({breakdown_mix_pct}/{100-breakdown_mix_pct})",
                       opacity=0.65, nbinsx=40, marker_color=GREEN))
     fig.update_layout(barmode="overlay", title=dict(text=f"Where you might land after {horizon} years", font=dict(size=15)),
                       xaxis_title="Final wealth ($)", yaxis_title="Number of futures",
