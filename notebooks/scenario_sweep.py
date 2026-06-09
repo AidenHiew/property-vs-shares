@@ -14,7 +14,7 @@ All sweeps share a common base scenario; only the swept dial moves.
 """
 import numpy as np
 from model.monte_carlo import run_monte_carlo
-from model.tax import sa_stamp_duty
+from model.duty import stamp_duty
 
 
 BASE = dict(
@@ -22,7 +22,7 @@ BASE = dict(
     horizon_years=25,
     purchase_price=700_000,
     deposit=140_000,     # 20%
-    stamp_duty=sa_stamp_duty(700_000),
+    stamp_duty=stamp_duty("SA", 700_000),
     buying_costs=2_600,
     loan_rate_mu=0.06,
     loan_rate_sigma=0.01,

@@ -12,7 +12,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from model.monte_carlo import run_monte_carlo
-from model.tax import sa_stamp_duty
+from model.duty import stamp_duty
 from model.normalisation import PORTFOLIO_PROFILES
 from config import STAGE_3_BRACKETS
 
@@ -378,6 +378,12 @@ with st.sidebar:
     st.markdown("**The property**")
     purchase_price = st.number_input("Purchase price", value=qp("price", int, 700_000), step=10_000,
                                      min_value=100_000, help="The rental property you're considering buying.")
+    state = st.selectbox(
+        "State",
+        ["NSW", "VIC", "QLD", "WA", "SA", "TAS", "ACT", "NT"],
+        index=["NSW", "VIC", "QLD", "WA", "SA", "TAS", "ACT", "NT"].index(qp("state", str, "SA")),
+        help="Sets stamp duty for your purchase. Income tax, CGT and negative gearing are federal (same Australia-wide).",
+    )
     deposit_pct = st.slider("Deposit %", 5, 60, qp("dep", int, 20),
                             help="Your cash up front. The rest is borrowed.")
     deposit = purchase_price * deposit_pct / 100
@@ -500,12 +506,13 @@ st.query_params.update({k: str(v) for k, v in {
     "mix": property_share_mix_pct,
     "port": ["asx_only", "global", "blended"].index(portfolio_profile),
     "regime": ["current", "restricted_2027"].index(property_regime),
+    "state": state,
 }.items()})
 
 # Stamp duty + buying costs
-stamp_duty = sa_stamp_duty(purchase_price)
+stamp_duty_amount = stamp_duty(state, purchase_price)
 buying_costs = 2_600
-upfront = deposit + stamp_duty + buying_costs
+upfront = deposit + stamp_duty_amount + buying_costs
 
 # New-build carve-out
 effective_property_regime = "current" if (property_age == "new_build" and not override_new_build_carveout) else property_regime
@@ -515,7 +522,7 @@ effective_property_regime = "current" if (property_age == "new_build" and not ov
 # ---------------------------------------------------------------------------
 run_kwargs = dict(
     horizon_years=horizon, purchase_price=purchase_price, deposit=deposit,
-    stamp_duty=stamp_duty, buying_costs=buying_costs,
+    stamp_duty=stamp_duty_amount, buying_costs=buying_costs,
     loan_rate_mu=loan_rate, loan_rate_sigma=loan_rate_sigma, gross_yield=gross_yield,
     vacancy_weeks_mu=vacancy_weeks, vacancy_weeks_sigma=vacancy_weeks_sigma, rental_yield_sigma=rental_yield_sigma,
     property_growth_mu=property_growth_mu, property_growth_sigma=property_growth_sigma,
@@ -695,7 +702,7 @@ with st.expander("🏛 Setup & tax rules used"):
     st.markdown(f"""
 - **Tax:** SA, marginal rate {mtr:.0%} (from ${income:,} income), FY2026 brackets
 - **Property:** {property_age.replace('_', ' ').title()}, {asset_type.title()}, {_fmt_pct(gross_yield)} yield
-- **Upfront cash:** {_fmt_money(upfront)} ({_fmt_money(deposit)} deposit + {_fmt_money(stamp_duty)} stamp duty + ${buying_costs:,} buying costs)
+- **Upfront cash:** {_fmt_money(upfront)} ({_fmt_money(deposit)} deposit + {_fmt_money(stamp_duty_amount)} stamp duty + ${buying_costs:,} buying costs)
 - **Shares profile:** {portfolio_profile.replace('_', ' ').title()} (avg {PORTFOLIO_PROFILES[portfolio_profile]['return_mu']:.1%}, {PORTFOLIO_PROFILES[portfolio_profile]['franked']:.0%} franked)
 - **Correlation:** {correlation:.2f} · **CPI:** {cpi:.1%} · **5,000 trials, fixed seed** (~±1-2% sampling noise on the headline)
 """)
