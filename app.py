@@ -107,41 +107,67 @@ def render_year_by_year_chart(result, horizon, mix_pct, deflate, yearly_deflator
     st.plotly_chart(fig, width="stretch")
 
 
-def render_year_by_year_table(result, horizon, mix_pct, deflate, yearly_deflator):
-    """Median-per-year financial breakdown table."""
-    def med(key):
-        return _median_path(result, key, deflate, yearly_deflator)
-
-    value = med("property_value_path")
-    balance = med("property_loan_balance_path")
-    rent = med("property_rent_path")
-    interest = med("property_interest_path")
-    tax = med("property_tax_path")            # negative = refund (negative gearing benefit)
-    pcash = med("property_cashflow_path")     # after-tax property cashflow
-    svalue = med("shares_wealth_path")
-    mixw = med("mixed_wealth_path")
-
+def render_property_year_table(result, horizon, deflate, yearly_deflator):
+    """Median-per-year property breakdown table."""
+    def med(key): return _median_path(result, key, deflate, yearly_deflator)
+    value, balance = med("property_value_path"), med("property_loan_balance_path")
+    rent, interest = med("property_rent_path"), med("property_interest_path")
+    tax, pcash = med("property_tax_path"), med("property_cashflow_path")
     cols = ["Year", "Property value", "Loan balance", "Your equity", "Net rent",
-            "Loan interest", "Tax benefit", "Property cashflow", "Shares value"]
-    if mix_pct < 100:
-        cols.append("Mix wealth")
+            "Loan interest", "Tax benefit", "Property cashflow"]
     head = "".join(f"<th>{c}</th>" for c in cols)
-
     body = ""
     for i in range(horizon):
-        equity = value[i] - balance[i]
-        tax_benefit = -tax[i]  # show refund as positive benefit
-        cells = [
-            f"{i+1}", _fmt_dollars(value[i]), _fmt_dollars(balance[i]), _fmt_dollars(equity),
-            _fmt_dollars(rent[i]), _fmt_dollars(interest[i]), _fmt_dollars(tax_benefit),
-            _fmt_dollars(pcash[i]), _fmt_dollars(svalue[i]),
-        ]
-        if mix_pct < 100:
-            cells.append(_fmt_dollars(mixw[i]))
+        cells = [f"{i+1}", _fmt_dollars(value[i]), _fmt_dollars(balance[i]),
+                 _fmt_dollars(value[i]-balance[i]), _fmt_dollars(rent[i]),
+                 _fmt_dollars(interest[i]), _fmt_dollars(-tax[i]), _fmt_dollars(pcash[i])]
         body += "<tr>" + "".join(f"<td>{c}</td>" for c in cells) + "</tr>"
     _render_html(GLOBAL_CSS + f'<div class="tbl-wrap"><table class="tbl"><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>')
-    st.caption("Each figure is the median across all simulated futures. 'Tax benefit' is the negative-gearing "
-               "refund (positive = money back). 'Property cashflow' is after-tax — negative means out-of-pocket that year.")
+
+
+def render_shares_year_table(result, horizon, mix_pct, deflate, yearly_deflator):
+    """Median-per-year shares breakdown table."""
+    def med(key): return _median_path(result, key, deflate, yearly_deflator)
+    inj, div = med("shares_contribution_path"), med("shares_dividend_path")
+    grow, dtax = med("shares_capital_growth_path"), med("shares_dividend_tax_path")
+    sval = med("shares_wealth_path")
+    show_mix = mix_pct < 100
+    mixw = med("mixed_wealth_path") if show_mix else None
+    cols = ["Year", "Cash injected", "Dividends reinvested", "Capital growth",
+            "Dividend tax", "Share value"] + (["Mix wealth"] if show_mix else [])
+    head = "".join(f"<th>{c}</th>" for c in cols)
+    body = ""
+    for i in range(horizon):
+        cells = [f"{i+1}", _fmt_dollars(inj[i]), _fmt_dollars(div[i]),
+                 _fmt_dollars(grow[i]), _fmt_dollars(dtax[i]), _fmt_dollars(sval[i])]
+        if show_mix:
+            cells.append(_fmt_dollars(mixw[i]))
+        body += "<tr>" + "".join(f"<td>{c}</td>" for c in cells) + "</tr>"
+    _render_html(f'<div class="tbl-wrap"><table class="tbl"><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>')
+    st.caption("Cash injected = the same out-of-pocket cash the property needs each year, invested in shares "
+               "instead. Dividends reinvested + capital growth build the share value. Figures are medians; "
+               "dividend tax is net of franking credits.")
+
+
+def render_shares_build_chart(result, horizon, deflate, yearly_deflator):
+    """Stacked-area chart showing what builds the share value over time."""
+    def med(key): return _median_path(result, key, deflate, yearly_deflator)
+    years = np.arange(1, horizon + 1)
+    inj = np.cumsum(med("shares_contribution_path"))
+    div = np.cumsum(med("shares_dividend_path"))
+    grow = np.cumsum(med("shares_capital_growth_path"))
+    fig = go.Figure()
+    for name, y, color in [("Cash injected", inj, TEAL),
+                           ("Dividends reinvested", div, GREEN),
+                           ("Market growth", grow, AMBER)]:
+        fig.add_trace(go.Scatter(x=years, y=y, name=name, mode="lines",
+                                 stackgroup="one", line=dict(width=0.5, color=color)))
+    fig.update_layout(height=320, margin=dict(l=0, r=0, t=10, b=0),
+                      legend=dict(orientation="h", y=-0.2),
+                      yaxis_title="Cumulative $", xaxis_title="Year")
+    st.plotly_chart(fig, width="stretch")
+    st.caption("What builds your median share value over time: the cash you put in, the dividends reinvested, "
+               "and market growth — stacked to the running total.")
 
 
 # ============================================================================
@@ -401,6 +427,7 @@ if deflate:
         "property_interest_path", "property_other_costs_path", "property_depreciation_path",
         "property_tax_path", "property_cashflow_path", "property_overflow_path",
         "shares_dividend_path", "shares_dividend_tax_path", "shares_cashflow_path",
+        "shares_contribution_path", "shares_capital_growth_path",
     ]
     for k in per_year_keys:
         result[k] = result[k] / yearly_deflator
@@ -463,7 +490,11 @@ _render_html(f"""
 # ---------------------------------------------------------------------------
 with st.expander("📈 Year-by-year breakdown (chart + table)"):
     render_year_by_year_chart(result, horizon, breakdown_mix_pct, deflate, yearly_deflator)
-    render_year_by_year_table(result, horizon, breakdown_mix_pct, deflate, yearly_deflator)
+    st.markdown("**Property — year by year**")
+    render_property_year_table(result, horizon, deflate, yearly_deflator)
+    render_shares_build_chart(result, horizon, deflate, yearly_deflator)
+    st.markdown("**Shares — year by year**")
+    render_shares_year_table(result, horizon, breakdown_mix_pct, deflate, yearly_deflator)
 
 with st.expander("⚖️ Compare all property/shares mixes"):
     render_comparison_table(sweep_rows, recommended_mix)
