@@ -100,6 +100,8 @@ def run_monte_carlo(
     # Allocation mix: 1.0 = 100% property (default, preserves current behaviour),
     # 0.0 = 100% shares, anything in between is a per-trial weighted blend.
     property_share_mix: float = 1.0,
+    # Flat annual land tax ($). User-supplied, constant across the horizon. Default 0.0.
+    annual_land_tax: float = 0.0,
 ):
     """Run the full Monte Carlo simulation. Returns aggregated outputs."""
     rng = np.random.default_rng(seed)
@@ -148,6 +150,8 @@ def run_monte_carlo(
     s_dividend_tax_path = np.zeros((trials, horizon_years))
     s_margin_interest_path = np.zeros((trials, horizon_years))
     s_cashflow_path = np.zeros((trials, horizon_years))
+    s_contribution_path = np.zeros((trials, horizon_years))
+    s_capital_growth_path = np.zeros((trials, horizon_years))
 
     for t in range(trials):
         p_inputs = PropertyInputs(
@@ -174,6 +178,7 @@ def run_monte_carlo(
             # so the reinvested-surplus bucket bears the same dividend tax + CGT drag.
             overflow_dividend_yield=PORTFOLIO_PROFILES[portfolio_profile]["div_yield"],
             overflow_franked_portion=PORTFOLIO_PROFILES[portfolio_profile]["franked"],
+            annual_land_tax=annual_land_tax,
         )
         p_result = simulate_property_trial(p_inputs)
 
@@ -220,6 +225,8 @@ def run_monte_carlo(
         s_dividend_tax_path[t] = s_result.dividend_tax_path
         s_margin_interest_path[t] = s_result.margin_interest_path
         s_cashflow_path[t] = s_result.cashflow_per_year
+        s_contribution_path[t] = s_result.contribution_path
+        s_capital_growth_path[t] = s_result.capital_growth_path
 
     forced_flags = flag_forced_sales(p_outside_cash, serviceability_ceiling)
 
@@ -273,4 +280,6 @@ def run_monte_carlo(
         "shares_dividend_tax_path": s_dividend_tax_path,
         "shares_margin_interest_path": s_margin_interest_path,
         "shares_cashflow_path": s_cashflow_path,
+        "shares_contribution_path": s_contribution_path,
+        "shares_capital_growth_path": s_capital_growth_path,
     }

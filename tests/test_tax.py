@@ -149,69 +149,36 @@ def test_cgt_indexed_zero_or_negative_gain_returns_zero():
     assert cgt_payable_indexed(-1_000, mtr=0.37) == 0.0
 
 
-from model.tax import sa_stamp_duty
+from model.duty import stamp_duty
 
 
-# Expected values computed from the SA_DUTY_BANDS encoded in tax.py.
+# Expected values computed from SA schedule in model/duty.py (transfer fee excluded).
 # Verify against the official RevenueSA calculator before relying:
 # https://www.revenuesa.sa.gov.au/stamp-duty/transfer-of-property
 def test_stamp_duty_zero_price():
-    assert sa_stamp_duty(0) == 0
+    assert stamp_duty("SA", 0) == 0
 
 
 def test_stamp_duty_400k():
-    # Band walk: $11,330 base at $300k + ($400k - $300k) * 5.0% = $16,330; + $181 fee
-    assert sa_stamp_duty(400_000) == pytest.approx(16_511, abs=1)
+    # Band walk: $11,330 base at $300k + ($400k - $300k) * 5.0% = $16,330 (no transfer fee)
+    assert stamp_duty("SA", 400_000) == pytest.approx(16_330, abs=1)
 
 
 def test_stamp_duty_700k():
-    # Band walk: $21,330 base at $500k + ($700k - $500k) * 5.5% = $32,330; + $181 fee
-    assert sa_stamp_duty(700_000) == pytest.approx(32_511, abs=1)
+    # Band walk: $21,330 base at $500k + ($700k - $500k) * 5.5% = $32,330 (no transfer fee)
+    assert stamp_duty("SA", 700_000) == pytest.approx(32_330, abs=1)
 
 
 def test_stamp_duty_1_2m():
-    # Band walk: $21,330 base at $500k + ($1,200k - $500k) * 5.5% = $59,830; + $181 fee
-    assert sa_stamp_duty(1_200_000) == pytest.approx(60_011, abs=1)
+    # Band walk: $21,330 base at $500k + ($1,200k - $500k) * 5.5% = $59,830 (no transfer fee)
+    assert stamp_duty("SA", 1_200_000) == pytest.approx(59_830, abs=1)
 
 
 def test_stamp_duty_at_band_boundary_500k():
-    # Exactly at $500k boundary: $11,330 base + ($500k - $300k) * 5.0% = $21,330; + $181 fee
+    # Exactly at $500k boundary: $11,330 base + ($500k - $300k) * 5.0% = $21,330 (no transfer fee)
     # (price <= upper, so $500k uses the $300k-$500k band's 5.0% rate)
-    assert sa_stamp_duty(500_000) == pytest.approx(21_511, abs=1)
+    assert stamp_duty("SA", 500_000) == pytest.approx(21_330, abs=1)
 
-
-from model.tax import sa_land_tax
-
-
-# Expected values derived from SA_LAND_TAX_BANDS encoded in tax.py.
-# Verify against RevenueSA before relying on production:
-# https://revenuesa.sa.gov.au/landtax/rates-and-thresholds
-def test_land_tax_zero():
-    assert sa_land_tax(0) == 0
-
-
-def test_land_tax_below_threshold():
-    assert sa_land_tax(500_000) == 0
-
-
-def test_land_tax_at_threshold_boundary():
-    # $833k uses the 0% band (<= boundary semantics)
-    assert sa_land_tax(833_000) == 0
-
-
-def test_land_tax_900k_in_first_taxable_band():
-    # ($900k - $833k) * 0.5% = $335
-    assert sa_land_tax(900_000) == pytest.approx(335, abs=1)
-
-
-def test_land_tax_1_5m_in_middle_band():
-    # $1,895 + ($1.5m - $1.212m) * 1.0% = $1,895 + $2,880 = $4,775
-    assert sa_land_tax(1_500_000) == pytest.approx(4_775, abs=1)
-
-
-def test_land_tax_2m_in_top_band():
-    # $7,335 + ($2m - $1.756m) * 2.4% = $7,335 + $5,856 = $13,191
-    assert sa_land_tax(2_000_000) == pytest.approx(13_191, abs=1)
 
 
 from model.tax import depreciation_for_year

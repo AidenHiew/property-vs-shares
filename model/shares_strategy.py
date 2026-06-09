@@ -48,6 +48,8 @@ class SharesResult:
     dividend_path: np.ndarray = field(default=None)           # gross dividends per year
     dividend_tax_path: np.ndarray = field(default=None)       # dividend tax per year (after margin-interest adjustment)
     margin_interest_path: np.ndarray = field(default=None)    # margin loan interest per year
+    contribution_path: np.ndarray = field(default=None)       # external cash injected each year
+    capital_growth_path: np.ndarray = field(default=None)     # price-appreciation $ each year
 
 
 def simulate_shares_trial(inputs: SharesInputs) -> SharesResult:
@@ -64,6 +66,8 @@ def simulate_shares_trial(inputs: SharesInputs) -> SharesResult:
     dividend_path = np.zeros(h)
     dividend_tax_path = np.zeros(h)
     margin_interest_path = np.zeros(h)
+    contribution_path = np.zeros(h)
+    capital_growth_path = np.zeros(h)
     total_dividends = 0.0
     total_dividend_tax = 0.0
 
@@ -71,6 +75,7 @@ def simulate_shares_trial(inputs: SharesInputs) -> SharesResult:
     portfolio_value += margin_balance
 
     for year in range(h):
+        pv_before = portfolio_value
         total_return = inputs.share_return_path[year]
         dividend_return = inputs.dividend_yield_pct
         capital_return = total_return - dividend_return
@@ -99,6 +104,7 @@ def simulate_shares_trial(inputs: SharesInputs) -> SharesResult:
         mer_cost = portfolio_value * inputs.mer
 
         # Apply capital return (price appreciation component only).
+        capital_growth_path[year] = pv_before * capital_return
         portfolio_value = portfolio_value * (1 + capital_return)
 
         if inputs.drp:
@@ -110,6 +116,7 @@ def simulate_shares_trial(inputs: SharesInputs) -> SharesResult:
             portfolio_value -= mer_cost
 
         portfolio_value += inputs.external_contributions[year]
+        contribution_path[year] = inputs.external_contributions[year]
         cumulative_cost_base += inputs.external_contributions[year]
 
         # Cashflow = actual cash leaving the investor's bank account.
@@ -139,4 +146,6 @@ def simulate_shares_trial(inputs: SharesInputs) -> SharesResult:
         dividend_path=dividend_path,
         dividend_tax_path=dividend_tax_path,
         margin_interest_path=margin_interest_path,
+        contribution_path=contribution_path,
+        capital_growth_path=capital_growth_path,
     )
