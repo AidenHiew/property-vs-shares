@@ -516,12 +516,14 @@ with st.expander("🏛 Setup & tax rules used"):
     notes.append("Both strategies deploy the same total cash each year (equal-contribution comparison).")
     for nme in notes:
         st.markdown(f"- {nme}")
-    st.markdown(f"""
-- **Tax:** SA, marginal rate {mtr:.0%} (from ${income:,} income), FY2026 brackets
-- **Property:** {property_age.replace('_', ' ').title()}, {asset_type.title()}, {_fmt_pct(gross_yield)} yield
-- **Upfront cash:** {_fmt_money(upfront)} ({_fmt_money(deposit)} deposit + {_fmt_money(stamp_duty_amount)} stamp duty + ${buying_costs:,} buying costs)
-- **Shares profile:** {portfolio_profile.replace('_', ' ').title()} (avg {PORTFOLIO_PROFILES[portfolio_profile]['return_mu']:.1%}, {PORTFOLIO_PROFILES[portfolio_profile]['franked']:.0%} franked)
-- **Correlation:** {correlation:.2f} · **CPI:** {cpi:.1%} · **5,000 trials, fixed seed** (~±1-2% sampling noise on the headline)
+    _render_html(f"""
+<ul>
+<li><b>Tax:</b> SA, marginal rate {mtr:.0%} (from <span>${income:,}</span> income), FY2026 brackets</li>
+<li><b>Property:</b> {property_age.replace('_', ' ').title()}, {asset_type.title()}, {_fmt_pct(gross_yield)} yield</li>
+<li><b>Upfront cash:</b> <span>{_fmt_money(upfront)}</span> (<span>{_fmt_money(deposit)}</span> deposit + <span>{_fmt_money(stamp_duty_amount)}</span> stamp duty + <span>${buying_costs:,}</span> buying costs)</li>
+<li><b>Shares profile:</b> {portfolio_profile.replace('_', ' ').title()} (avg {PORTFOLIO_PROFILES[portfolio_profile]['return_mu']:.1%}, {PORTFOLIO_PROFILES[portfolio_profile]['franked']:.0%} franked)</li>
+<li><b>Correlation:</b> {correlation:.2f} · <b>CPI:</b> {cpi:.1%} · <b>5,000 trials, fixed seed</b> (~±1-2% sampling noise on the headline)</li>
+</ul>
 """)
 
 # ---------------------------------------------------------------------------
@@ -542,6 +544,5 @@ _render_html("""
 and not a recommendation. Simulations and past performance don't guarantee future results. Tax law, interest rates,
 and property markets change, and the defaults may not match your circumstances. Verify each input against your own
 lender quote, suburb rental data, and the ATO, and speak to a licensed financial adviser before making a decision.
-South Australia tax tables only; single property; some costs (rates/insurance line items, margin-call risk) are
-simplified. Budget 2026-27 rules are announcement-only and not yet legislated.</div>
+Stamp duty is state-specific (selected above); income tax, CGT and negative gearing are federal. Single property; land tax is your flat input; some costs (rates/insurance, margin-call risk) are simplified. Budget 2026-27 rules are announcement-only and not yet legislated.</div>
 """)
