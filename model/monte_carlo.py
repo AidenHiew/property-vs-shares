@@ -100,6 +100,8 @@ def run_monte_carlo(
     # Allocation mix: 1.0 = 100% property (default, preserves current behaviour),
     # 0.0 = 100% shares, anything in between is a per-trial weighted blend.
     property_share_mix: float = 1.0,
+    # Flat annual land tax ($). User-supplied, constant across the horizon. Default 0.0.
+    annual_land_tax: float = 0.0,
 ):
     """Run the full Monte Carlo simulation. Returns aggregated outputs."""
     rng = np.random.default_rng(seed)
@@ -174,6 +176,7 @@ def run_monte_carlo(
             # so the reinvested-surplus bucket bears the same dividend tax + CGT drag.
             overflow_dividend_yield=PORTFOLIO_PROFILES[portfolio_profile]["div_yield"],
             overflow_franked_portion=PORTFOLIO_PROFILES[portfolio_profile]["franked"],
+            annual_land_tax=annual_land_tax,
         )
         p_result = simulate_property_trial(p_inputs)
 

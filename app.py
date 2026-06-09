@@ -411,6 +411,11 @@ with st.sidebar:
     max_top_up = st.number_input("Max annual top-up you can afford", value=qp("topup", int, 20_000), step=1_000,
                                  min_value=0, help="The most out-of-pocket cash you could feed the property in a "
                                                    "bad year without financial stress. Your safety ceiling.")
+    annual_land_tax = st.number_input(
+        "Annual land tax ($)", min_value=0, value=qp("landtax", int, 0), step=500,
+        help="Off by default. A real, tax-deductible annual cost (varies by state and land value). "
+             "Leaving it 0 makes property look slightly cheaper than reality.",
+    )
 
     st.markdown("**The choice**")
     property_share_mix_pct = st.slider("Property share of your money %", 0, 100, qp("mix", int, 100), step=5,
@@ -503,7 +508,7 @@ st.query_params.update({k: str(v) for k, v in {
     "age": ["new_build", "established_post_2017", "established_pre_2017"].index(property_age),
     "atype": ["house", "apartment", "townhouse"].index(asset_type),
     "income": income, "rate": round(loan_rate * 100, 1), "yrs": horizon, "topup": max_top_up,
-    "mix": property_share_mix_pct,
+    "landtax": annual_land_tax, "mix": property_share_mix_pct,
     "port": ["asx_only", "global", "blended"].index(portfolio_profile),
     "regime": ["current", "restricted_2027"].index(property_regime),
     "state": state,
@@ -530,6 +535,7 @@ run_kwargs = dict(
     management_fee_pct=management_fee_pct, maintenance_pct=maintenance_pct,
     property_age=property_age, asset_type=asset_type, depreciation_override=depreciation_override,
     property_regime=effective_property_regime, portfolio_profile=portfolio_profile,
+    annual_land_tax=annual_land_tax,
     mode=comparison_mode, margin_loan_rate=margin_loan_rate, isolate_asset_quality=isolate_asset_quality,
     correlation=correlation, mtr=mtr, cpi=cpi, drp=True, serviceability_ceiling=max_top_up, seed=42,
     return_distribution=return_distribution, t_df=t_df,

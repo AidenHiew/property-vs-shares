@@ -16,9 +16,9 @@ from dataclasses import dataclass, field
 from typing import Optional
 import numpy as np
 
-from config import BUILDING_COST_PCT, LAND_VALUE_PCT, SHARE_RETURN_FOR_OVERFLOW
+from config import BUILDING_COST_PCT, SHARE_RETURN_FOR_OVERFLOW
 from model.tax import (
-    sa_land_tax, depreciation_for_year, cgt_payable, cgt_payable_indexed,
+    depreciation_for_year, cgt_payable, cgt_payable_indexed,
     franking_credit_refund,
 )
 from model.inflation import inflate_series
@@ -67,6 +67,10 @@ class PropertyInputs:
     # Monte Carlo runner passes the portfolio profile's div_yield + franked portion.
     overflow_dividend_yield: float = 0.0
     overflow_franked_portion: float = 0.0
+    # Flat annual land tax ($). User-supplied, constant across the horizon.
+    # Default 0.0 means no land tax (makes property slightly cheaper than reality).
+    # Tax-deductible; the cost+deduction wiring yields the correct net land_tax*(1-MTR).
+    annual_land_tax: float = 0.0
 
 
 @dataclass
@@ -174,10 +178,9 @@ def simulate_property_trial(inputs: PropertyInputs) -> PropertyResult:
         initial_loan, inputs.loan_rate_path, inputs.loan_term_years, inputs.io_period_years
     )
 
-    # Land tax (annual, on unimproved land value at start of year).
-    # Year 1 land value = purchase_price * LAND_VALUE_PCT (e.g. $420k for a house at $700k).
-    land_value_path = start_of_year_values * LAND_VALUE_PCT[inputs.asset_type]
-    land_tax_path = np.array([sa_land_tax(v) for v in land_value_path])
+    # Land tax: flat user-supplied annual amount, constant across the horizon.
+    # (Per-state land-tax tables are out of scope; editable in the UI, default 0.)
+    land_tax_path = np.full(h, inputs.annual_land_tax)
 
     # Depreciation (constant per year in v1, from building cost).
     building_cost = inputs.purchase_price * BUILDING_COST_PCT[inputs.asset_type]
