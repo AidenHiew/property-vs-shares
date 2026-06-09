@@ -15,108 +15,15 @@ from model.monte_carlo import run_monte_carlo
 from model.duty import stamp_duty
 from model.normalisation import PORTFOLIO_PROFILES
 from config import STAGE_3_BRACKETS
-
-# ============================================================================
-# Design system
-# ============================================================================
-# Semantic palette: green = safe/recommended, teal = shares, amber = property,
-# red = risk. System font stack (fast, native-feeling). One type scale.
-GREEN, TEAL, AMBER, RED = "#16a34a", "#0ea5e9", "#f59e0b", "#ef4444"
-AMBER_DK, INK, MUTED, FAINT, LINE = "#d97706", "#1a1a1a", "#6b7280", "#9ca3af", "#e5e7eb"
-
-GLOBAL_CSS = f"""
-<style>
-  .block-container {{ padding-top: 2.2rem; max-width: 1180px; }}
-  /* type scale */
-  .pvs-h1 {{ font-size: 30px; font-weight: 700; color: {INK}; line-height: 1.15; margin: 0 0 4px; }}
-  .pvs-sub {{ font-size: 15px; color: {MUTED}; margin: 0 0 14px; line-height: 1.5; }}
-  .pvs-section {{ font-size: 20px; font-weight: 700; color: {INK}; margin: 8px 0 2px; }}
-  .pvs-section-sub {{ font-size: 13px; color: {MUTED}; margin: 0 0 12px; }}
-
-  /* persona cards */
-  .cards {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin: 6px 0 8px; }}
-  .card {{ background: #fff; border: 1px solid {LINE}; border-radius: 12px; padding: 22px 22px 18px;
-           position: relative; transition: box-shadow .18s ease, transform .18s ease; }}
-  .card:hover {{ box-shadow: 0 6px 18px rgba(0,0,0,.07); transform: translateY(-1px); }}
-  .card.rec {{ border: 1px solid {GREEN}; border-left: 5px solid {GREEN};
-               box-shadow: 0 8px 24px rgba(22,163,74,.12); }}
-  .badge {{ background: {GREEN}; color: #fff; font-size: 11px; font-weight: 700; letter-spacing: .3px;
-            padding: 4px 10px; border-radius: 999px; display: inline-block; margin-bottom: 12px; }}
-  .pname {{ font-size: 12px; font-weight: 700; color: {MUTED}; text-transform: uppercase; letter-spacing: .6px; }}
-  .pthr {{ font-size: 11px; color: {FAINT}; margin: 2px 0 14px; font-weight: 600; }}
-  .alloc {{ font-size: 30px; font-weight: 800; color: {INK}; line-height: 1.05; }}
-  .card.rec .alloc {{ color: {GREEN}; }}
-  .alloc-sub {{ font-size: 13px; color: {MUTED}; margin-top: 2px; }}
-  .hr {{ height: 1px; background: {LINE}; margin: 15px 0; }}
-  .mrow {{ margin-bottom: 9px; }}
-  .mlabel {{ font-size: 12px; color: {FAINT}; margin-bottom: 1px; }}
-  .mval {{ font-size: 17px; font-weight: 700; color: {INK}; }}
-  .blurb {{ font-size: 12px; color: #4b5563; font-style: italic; background: #f9fafb;
-            border-radius: 8px; padding: 11px 12px; margin: 10px 0 0; }}
-
-  /* metric tiles */
-  .tiles {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin: 6px 0 4px; }}
-  .tile {{ background: #fff; border: 1px solid {LINE}; border-radius: 10px; padding: 16px 18px; }}
-  .tile.good {{ background: rgba(22,163,74,.05); border-color: rgba(22,163,74,.35); }}
-  .tile .tlabel {{ font-size: 12px; color: {MUTED}; margin-bottom: 4px; }}
-  .tile .tval {{ font-size: 22px; font-weight: 800; color: {INK}; line-height: 1; }}
-
-  /* headline number */
-  .headline {{ display: flex; align-items: baseline; gap: 12px; margin: 4px 0 2px; flex-wrap: wrap; }}
-  .headline .big {{ font-size: 40px; font-weight: 800; color: {GREEN}; line-height: 1; }}
-  .headline .ctx {{ font-size: 16px; color: {INK}; font-weight: 600; }}
-
-  /* feasibility flag */
-  .flag {{ border-radius: 10px; padding: 13px 16px; font-size: 14px; margin: 10px 0 4px; font-weight: 500; }}
-  .flag.ok  {{ background: rgba(22,163,74,.08);  border: 1px solid rgba(22,163,74,.4);  color: #166534; }}
-  .flag.warn{{ background: rgba(245,158,11,.10); border: 1px solid rgba(245,158,11,.5); color: #92400e; }}
-  .flag.bad {{ background: rgba(239,68,68,.08);  border: 1px solid rgba(239,68,68,.45); color: #991b1b; }}
-
-  /* tables */
-  .tbl-wrap {{ overflow-x: auto; }}
-  .tbl {{ width: 100%; border-collapse: collapse; font-size: 13.5px; background: #fff;
-          border: 1px solid {LINE}; border-radius: 8px; overflow: hidden; }}
-  .tbl thead {{ background: #f9fafb; }}
-  .tbl th {{ text-align: right; padding: 10px 14px; font-weight: 700; color: #374151; font-size: 11px;
-             text-transform: uppercase; letter-spacing: .4px; border-bottom: 2px solid {LINE}; white-space: nowrap; }}
-  .tbl th:first-child, .tbl td:first-child {{ text-align: left; }}
-  .tbl td {{ padding: 9px 14px; border-bottom: 1px solid #f3f4f6; color: {INK}; text-align: right; white-space: nowrap; }}
-  .tbl tr:last-child td {{ border-bottom: none; }}
-  .tbl .rec {{ background: rgba(22,163,74,.07); font-weight: 700; }}
-  .tbl .rec td {{ color: #15803d; }}
-
-  .disclaimer {{ font-size: 12px; color: {MUTED}; border-top: 1px solid {LINE};
-                 margin-top: 28px; padding-top: 14px; line-height: 1.6; }}
-
-  @media (max-width: 820px) {{
-    .cards {{ grid-template-columns: 1fr; }}
-    .tiles {{ grid-template-columns: repeat(2, 1fr); }}
-    .pvs-h1 {{ font-size: 24px; }}
-    .headline .big {{ font-size: 32px; }}
-  }}
-</style>
-"""
+from ui.common import (GREEN, TEAL, AMBER, RED, AMBER_DK, INK, MUTED, FAINT, LINE,
+                       GLOBAL_CSS, _render_html, _fmt_money, _fmt_dollars, _fmt_pct)
+from ui.persona import (compute_persona_sweep, find_optimal_mix,
+                        render_persona_cards, render_comparison_table)
 
 
 # ============================================================================
 # Small helpers
 # ============================================================================
-def _fmt_money(x):
-    if abs(x) >= 1_000_000:
-        return f"${x/1_000_000:.2f}M"
-    if abs(x) >= 1_000:
-        return f"${x/1_000:.0f}k"
-    return f"${x:.0f}"
-
-
-def _fmt_dollars(x):
-    return f"-${abs(x):,.0f}" if x < 0 else f"${x:,.0f}"
-
-
-def _fmt_pct(x):
-    return f"{x*100:.1f}%"
-
-
 def mtr_from_income(income: float) -> float:
     """Marginal tax rate for a taxable income under FY2026 Stage-3 brackets."""
     prev = 0.0
@@ -140,13 +47,6 @@ def _corr_words(c: float) -> str:
     return "tend to move up and down together"
 
 
-def _render_html(html: str) -> None:
-    """Render raw HTML via st.markdown, stripping per-line indentation so the
-    markdown parser doesn't treat indented lines as code blocks."""
-    flat = "\n".join(line.lstrip() for line in html.strip().split("\n"))
-    st.markdown(flat, unsafe_allow_html=True)
-
-
 # ----- URL persistence -------------------------------------------------------
 def qp(key, cast, default):
     """Read an input default from the URL query params (so a scenario survives
@@ -158,119 +58,6 @@ def qp(key, cast, default):
         return cast(raw)
     except (ValueError, TypeError):
         return default
-
-
-# ============================================================================
-# Persona sweep (recommendation engine)
-# ============================================================================
-PERSONA_DEFS = [
-    ("Safe Player",      0.99, "I want near-certainty of staying within my cash ceiling — even if it costs some wealth."),
-    ("Balanced",         0.95, "I want very high safety, but I'll accept a small chance of cashflow stress for more wealth."),
-    ("Wealth Maximizer", 0.85, "I'll accept real risk of a forced sale (~1 in 7 futures) in exchange for the highest wealth."),
-]
-
-
-@st.cache_data(show_spinner="Computing allocation recommendations…")
-def compute_persona_sweep(**kwargs):
-    """Mix sweep at 11 points × 2000 trials. Returns one dict per mix point."""
-    rows = []
-    for mix_pct in range(0, 101, 10):
-        r = run_monte_carlo(**{**kwargs, "property_share_mix": mix_pct / 100, "trials": 2000})
-        rows.append({
-            "mix_pct": mix_pct,
-            "median_wealth": r["median_mixed_wealth"],
-            "p_solvent": r["p_mix_solvent"],
-            "worst_year_cash": float(np.percentile(r["mixed_outside_cash_per_trial_year"].max(axis=1), 90)),
-            "p_beats_shares": r["p_mix_beats_pure_shares"],
-        })
-    return rows
-
-
-def find_optimal_mix(rows, min_p_solvent):
-    safe = [r for r in rows if r["p_solvent"] >= min_p_solvent]
-    if not safe:
-        return None
-    return max(safe, key=lambda r: r["median_wealth"])
-
-
-def _persona_card_html(name, threshold, blurb, row, is_rec, failed):
-    badge = '<div class="badge">★ RECOMMENDED</div>' if is_rec else ''
-    klass = "card rec" if is_rec else "card"
-    if failed:
-        return f"""
-        <div class="{klass}">{badge}
-          <div class="pname">{name}</div>
-          <div class="pthr">Safety appetite: ≥{int(threshold*100)}% chance of staying within your cash ceiling</div>
-          <div class="alloc" style="font-size:19px;color:{AMBER_DK};">Not reachable</div>
-          <div class="hr"></div>
-          <p class="blurb">No allocation reaches ≥{int(threshold*100)}% safety under your inputs. Try raising your
-          "max annual top-up", lowering the loan amount, or shifting toward shares.</p>
-        </div>"""
-    mix = row["mix_pct"]
-    return f"""
-    <div class="{klass}">{badge}
-      <div class="pname">{name}</div>
-      <div class="pthr">Safety appetite: ≥{int(threshold*100)}% chance of staying within your cash ceiling</div>
-      <div class="alloc">{mix}% property</div>
-      <div class="alloc-sub">{100-mix}% shares</div>
-      <div class="hr"></div>
-      <div class="mrow"><div class="mlabel">Typical wealth in {{H}} years</div><div class="mval">{_fmt_money(row['median_wealth'])}</div></div>
-      <div class="mrow"><div class="mlabel">Chance you never run out of cash</div><div class="mval">{_fmt_pct(row['p_solvent'])}</div></div>
-      <div class="mrow"><div class="mlabel">Worst-year cash you'd need to find</div><div class="mval">{_fmt_money(row['worst_year_cash'])}</div></div>
-      <div class="hr"></div>
-      <p class="blurb">"{blurb}"</p>
-    </div>"""
-
-
-def render_persona_cards(rows, horizon):
-    resolved = [(n, t, b, find_optimal_mix(rows, t)) for n, t, b in PERSONA_DEFS]
-    safe_failed = resolved[0][3] is None
-
-    # All three resolve to the same mix → single merged card.
-    if not safe_failed:
-        mixes = {r[3]["mix_pct"] for r in resolved}
-        if len(mixes) == 1:
-            row = resolved[1][3]
-            html = f"""
-            <div class="cards" style="grid-template-columns:1fr;max-width:560px;margin:0 auto;">
-              <div class="card rec"><div class="badge">★ RECOMMENDED</div>
-                <div class="pname">Optimal allocation</div>
-                <div class="alloc">{row['mix_pct']}% property</div>
-                <div class="alloc-sub">{100-row['mix_pct']}% shares</div>
-                <div class="hr"></div>
-                <div class="mrow"><div class="mlabel">Typical wealth in {horizon} years</div><div class="mval">{_fmt_money(row['median_wealth'])}</div></div>
-                <div class="mrow"><div class="mlabel">Chance you never run out of cash</div><div class="mval">{_fmt_pct(row['p_solvent'])}</div></div>
-                <div class="hr"></div>
-                <p class="blurb">"All three safety levels (≥99%, ≥95%, ≥85%) point to the same allocation under your
-                current inputs — pick this with confidence."</p>
-              </div></div>"""
-            _render_html(GLOBAL_CSS + html)
-            return
-
-    cards = ""
-    for name, thr, blurb, row in resolved:
-        failed = (name == "Safe Player" and safe_failed) or (row is None)
-        cards += _persona_card_html(name, thr, blurb, row, name == "Balanced", failed)
-    _render_html(GLOBAL_CSS + f'<div class="cards">{cards}</div>'.replace("{H}", str(horizon)))
-
-
-def render_comparison_table(rows, recommended_mix):
-    body = ""
-    for row in rows:
-        is_rec = row["mix_pct"] == recommended_mix
-        star = ' <span style="color:#16a34a;">★</span>' if is_rec else ""
-        body += f"""<tr class="{'rec' if is_rec else ''}">
-          <td>{row['mix_pct']}%{star}</td>
-          <td>{_fmt_money(row['median_wealth'])}</td>
-          <td>{_fmt_pct(row['p_solvent'])}</td>
-          <td>{_fmt_money(row['worst_year_cash'])}</td>
-          <td>{_fmt_pct(row['p_beats_shares'])}</td></tr>"""
-    html = f"""
-    <div class="tbl-wrap"><table class="tbl">
-      <thead><tr><th>Property mix</th><th>Typical wealth</th>
-        <th>Never run out of cash</th><th>Worst-year cash</th><th>Beats pure shares</th></tr></thead>
-      <tbody>{body}</tbody></table></div>"""
-    _render_html(GLOBAL_CSS + html)
 
 
 # ============================================================================
