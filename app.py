@@ -322,14 +322,21 @@ if errors:
     st.stop()
 
 # Persist inputs in the URL (shareable + survives refresh). Advanced σ knobs stay session-local.
+# Clamp persona to a valid option: a deselected segmented_control sets persona_pick to
+# None, which must never reach the URL (str(None) == "None" is not a valid option and
+# would crash the segmented_control default on the next load).
+VALID_PERSONAS = ("Safe", "Balanced", "Wealth Maximizer", "Custom")
+_persona_qp = st.session_state.get("persona_pick") if "persona_pick" in st.session_state else qp("persona", str, "Balanced")
+if _persona_qp not in VALID_PERSONAS:
+    _persona_qp = "Balanced"
 st.query_params.update({k: str(v) for k, v in {
     "price": purchase_price, "dep": deposit_pct, "yield": round(gross_yield * 100, 1),
     "age": ["new_build", "established_post_2017", "established_pre_2017"].index(property_age),
     "atype": ["house", "apartment", "townhouse"].index(asset_type),
     "income": income, "rate": round(loan_rate * 100, 1), "yrs": horizon, "topup": max_top_up,
     "landtax": annual_land_tax,
-    "persona": (st.session_state["persona_pick"] if "persona_pick" in st.session_state else qp("persona", str, "Balanced")),
-    **({"mix": property_share_mix_pct} if (st.session_state["persona_pick"] if "persona_pick" in st.session_state else qp("persona", str, "Balanced")) == "Custom" else {}),
+    "persona": _persona_qp,
+    **({"mix": property_share_mix_pct} if _persona_qp == "Custom" else {}),
     "port": ["asx_only", "global", "blended"].index(portfolio_profile),
     "regime": ["current", "restricted_2027"].index(property_regime),
     "state": state,
@@ -401,9 +408,12 @@ options = ["Safe", "Balanced", "Wealth Maximizer", "Custom"]
 label_map = {k: (k + " ★" if k == "Balanced" and not stale else k) for k in options}
 if stale:
     st.caption("Recommendations are stale — click ↻ Update recommendations.")
+_persona_default = qp("persona", str, "Balanced")
+if _persona_default not in options:  # guard stale/invalid URL values (e.g. "None")
+    _persona_default = "Balanced"
 picked = st.segmented_control(
     "View breakdown for", options, format_func=lambda k: label_map[k],
-    default=qp("persona", str, "Balanced"), key="persona_pick",
+    default=_persona_default, key="persona_pick",
 )
 if picked is None:
     picked = "Balanced"

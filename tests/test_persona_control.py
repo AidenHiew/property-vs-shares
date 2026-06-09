@@ -62,3 +62,22 @@ def test_persona_url_param_selects_wealth():
         assert val == "Wealth Maximizer", (
             f"Expected persona_pick=='Wealth Maximizer', got {val!r}"
         )
+
+
+def test_invalid_persona_url_param_does_not_crash():
+    # Regression: a deselected segmented_control wrote persona=None to the URL;
+    # the literal string "None" is not a valid option and crashed the app on the
+    # next load (StreamlitAPIException). It must clamp to "Balanced" instead.
+    from streamlit.testing.v1 import AppTest
+    at = AppTest.from_file("app.py", default_timeout=90)
+    at.query_params["persona"] = "None"
+    at.run()
+    assert not at.exception, f"App crashed on invalid persona URL param: {at.exception}"
+    segs = at.get("segmented_control")
+    if segs:
+        assert segs[0].value == "Balanced"
+    # URL must be rewritten to a valid value, never "None"
+    qp_persona = at.query_params["persona"]
+    if isinstance(qp_persona, list):  # AppTest may return a list
+        qp_persona = qp_persona[0]
+    assert qp_persona in ("Safe", "Balanced", "Wealth Maximizer", "Custom")
