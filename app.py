@@ -18,7 +18,7 @@ from model.normalisation import PORTFOLIO_PROFILES
 from config import STAGE_3_BRACKETS
 from ui.common import (GREEN, TEAL, AMBER, RED, AMBER_DK, INK, MUTED, FAINT, LINE,
                        GLOBAL_CSS, _render_html, _fmt_money, _fmt_dollars, _fmt_pct)
-from model.mix_curve import build_mix_curve, MixPoint
+from model.mix_curve import build_mix_curve
 from ui.persona import (find_optimal_mix, render_persona_cards, render_comparison_table)
 from ui.onboarding import render_hero, render_limitations, render_full_guide
 from model.solvency import flag_forced_sales
@@ -392,7 +392,7 @@ run_kwargs = dict(
 )
 
 
-@st.cache_data(show_spinner="Running 5,000 simulated futures…")
+@st.cache_data
 def cached_run(**kwargs):
     return run_monte_carlo(**kwargs)
 
@@ -421,7 +421,6 @@ if _stale or _prior_result is None:
             _new_result = cached_run(trials=5000, property_share_mix=1.0, **run_kwargs)
             st.session_state["_base_result"] = _new_result
             st.session_state["_run_hash"] = _current_hash
-            _stale = False
         except Exception as _e:
             st.error(
                 "Something went wrong — try a shorter horizon or smaller deposit. "
@@ -458,7 +457,6 @@ if picked == "Custom":
 else:
     _row = find_optimal_mix(mix_curve, PERSONA_TO_THRESHOLD[picked])
     breakdown_mix_pct = int(round(_row.mix_pct * 100)) if _row else (int(round(balanced.mix_pct * 100)) if balanced else 50)
-recommended_mix = breakdown_mix_pct
 
 # Derive per-render mixed arrays from base_result (no second simulation).
 # All mix-specific arrays are computed post-hoc from the base run's unblended paths.
