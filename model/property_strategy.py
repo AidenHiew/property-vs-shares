@@ -71,6 +71,9 @@ class PropertyInputs:
     # Default 0.0 means no land tax (makes property slightly cheaper than reality).
     # Tax-deductible; the cost+deduction wiring yields the correct net land_tax*(1-MTR).
     annual_land_tax: float = 0.0
+    # Per-trial per-year effective yield path (shape: horizon_years). When None the scalar
+    # gross_yield is used — this is the sigma==0 path and is byte-identical to v1 behaviour.
+    gross_yield_path: Optional[np.ndarray] = None
 
 
 @dataclass
@@ -164,7 +167,10 @@ def simulate_property_trial(inputs: PropertyInputs) -> PropertyResult:
     start_of_year_values[1:] = value_path[:-1]
 
     occupied_weeks = 52 - inputs.vacancy_weeks_path
-    rent_path = inputs.gross_yield * start_of_year_values * occupied_weeks / 52
+    # Use per-year yield path when provided (sigma>0), else scalar gross_yield (sigma==0).
+    # When gross_yield_path is None this is byte-identical to the original single-line form.
+    eff_yield = inputs.gross_yield_path if inputs.gross_yield_path is not None else inputs.gross_yield
+    rent_path = eff_yield * start_of_year_values * occupied_weeks / 52
 
     # Maintenance: % of purchase price, inflated by CPI annually.
     base_maintenance = inputs.purchase_price * inputs.maintenance_pct

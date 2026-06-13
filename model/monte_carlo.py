@@ -125,10 +125,37 @@ def run_monte_carlo(
     else:
         raise ValueError(f"unknown loan_rate_distribution: {loan_rate_distribution}")
     loan_rate_paths = loan_rate_mu + loan_rate_sigma * loan_rate_z
-    vacancy_paths = np.maximum(0, vacancy_weeks_mu + vacancy_weeks_sigma * rng.standard_normal((trials, horizon_years)))
-    # rental_yield_sigma is plumbed through for future use; v1 PropertyInputs takes a scalar
-    # gross_yield, so we don't actually use yield_paths in the loop. Kept here for symmetry
-    # with the other stochastic vars; can plumb into PropertyInputs in v2.
+    # Capture vacancy standard-normal draw in a named variable so it can be reused for the
+    # yield-vacancy correlation.  This is byte-identical to the previous single-line draw —
+    # same rng, same draw order, same result.
+    vacancy_z = rng.standard_normal((trials, horizon_years))
+    vacancy_paths = np.maximum(0, vacancy_weeks_mu + vacancy_weeks_sigma * vacancy_z)
+
+    # --- Phase 1b: per-trial-per-year yield deviation (AR(1), correlated with vacancy) ---
+    # Only generated when rental_yield_sigma > 0; uses a SEPARATE rng (seed+2) so the
+    # existing draw order (loan_rate_z, vacancy_z, …) is never perturbed at sigma==0.
+    if rental_yield_sigma > 0:
+        yield_rng = np.random.default_rng(seed + 2)  # distinct stream; never perturbs other draws
+        RHO_YIELD_VACANCY = -0.5   # bad markets: more vacancy AND lower rent
+        PHI = 0.7                  # AR(1) persistence of rent-level drift
+        # Correlated per-year shock: shares vacancy_z, plus idiosyncratic component.
+        eps = (
+            RHO_YIELD_VACANCY * vacancy_z
+            + np.sqrt(1 - RHO_YIELD_VACANCY ** 2)
+            * yield_rng.standard_normal((trials, horizon_years))
+        )
+        # AR(1) with stationary std == rental_yield_sigma (in yield points, e.g. 0.005 = 0.5pp).
+        # Var_stationary = innov_sigma² / (1 - PHI²) = rental_yield_sigma² by construction.
+        innov_sigma = rental_yield_sigma * np.sqrt(1 - PHI ** 2)
+        yield_dev = np.zeros((trials, horizon_years))
+        yield_dev[:, 0] = rental_yield_sigma * eps[:, 0]  # stationary start
+        for h in range(1, horizon_years):
+            yield_dev[:, h] = PHI * yield_dev[:, h - 1] + innov_sigma * eps[:, h]
+        # Effective per-year yield, floored at 50% of the scalar gross_yield.
+        yield_floor = 0.5 * gross_yield
+        yield_paths = np.maximum(yield_floor, gross_yield + yield_dev)
+    else:
+        yield_paths = None  # sigma==0: use scalar gross_yield → byte-identical
 
     p_terminal = np.zeros(trials)
     s_terminal = np.zeros(trials)
@@ -160,7 +187,7 @@ def run_monte_carlo(
             loan_rate_path=loan_rate_paths[t],
             loan_term_years=30,
             io_period_years=5,
-            gross_yield=gross_yield,  # scalar — see comment above re yield_paths
+            gross_yield=gross_yield,  # scalar baseline; gross_yield_path overrides when sigma>0
             vacancy_weeks_path=vacancy_paths[t],
             capital_growth_path=paths["property_growth"][t],
             management_fee_pct=management_fee_pct,
@@ -179,6 +206,8 @@ def run_monte_carlo(
             overflow_dividend_yield=PORTFOLIO_PROFILES[portfolio_profile]["div_yield"],
             overflow_franked_portion=PORTFOLIO_PROFILES[portfolio_profile]["franked"],
             annual_land_tax=annual_land_tax,
+            # Pass per-year yield path when sigma>0; None when sigma==0 (byte-identical).
+            gross_yield_path=yield_paths[t] if yield_paths is not None else None,
         )
         p_result = simulate_property_trial(p_inputs)
 
@@ -267,6 +296,9 @@ def run_monte_carlo(
         "p_mix_solvent": float(1 - mixed_forced_flags.mean()),
         "mixed_outside_cash_per_trial_year": mixed_outside_cash,
         # Per-year breakdown arrays — shape (trials, horizon_years)
+        # Vacancy weeks drawn per trial-year (floored at 0). Analytical output: lets callers
+        # verify the yield↔vacancy coupling (RHO_YIELD_VACANCY) without re-deriving the draw.
+        "vacancy_paths": vacancy_paths,
         "property_value_path": p_value_path,
         "property_loan_balance_path": p_loan_balance_path,
         "property_rent_path": p_rent_path,

@@ -27,15 +27,15 @@ GLOBAL_CSS = f"""
   .badge {{ background: {GREEN}; color: #fff; font-size: 11px; font-weight: 700; letter-spacing: .3px;
             padding: 4px 10px; border-radius: 999px; display: inline-block; margin-bottom: 12px; }}
   .pname {{ font-size: 12px; font-weight: 700; color: {MUTED}; text-transform: uppercase; letter-spacing: .6px; }}
-  .pthr {{ font-size: 11px; color: {FAINT}; margin: 2px 0 14px; font-weight: 600; }}
+  .pthr {{ font-size: 14px; color: {MUTED}; margin: 2px 0 14px; font-weight: 600; }}
   .alloc {{ font-size: 30px; font-weight: 800; color: {INK}; line-height: 1.05; }}
   .card.rec .alloc {{ color: {GREEN}; }}
   .alloc-sub {{ font-size: 13px; color: {MUTED}; margin-top: 2px; }}
   .hr {{ height: 1px; background: {LINE}; margin: 15px 0; }}
   .mrow {{ margin-bottom: 9px; }}
-  .mlabel {{ font-size: 12px; color: {FAINT}; margin-bottom: 1px; }}
+  .mlabel {{ font-size: 14px; color: {MUTED}; margin-bottom: 1px; }}
   .mval {{ font-size: 17px; font-weight: 700; color: {INK}; }}
-  .blurb {{ font-size: 12px; color: #4b5563; font-style: italic; background: #f9fafb;
+  .blurb {{ font-size: 14px; color: #4b5563; font-style: italic; background: #f9fafb;
             border-radius: 8px; padding: 11px 12px; margin: 10px 0 0; }}
 
   /* metric tiles */
@@ -55,6 +55,7 @@ GLOBAL_CSS = f"""
   .flag.ok  {{ background: rgba(22,163,74,.08);  border: 1px solid rgba(22,163,74,.4);  color: #166534; }}
   .flag.warn{{ background: rgba(245,158,11,.10); border: 1px solid rgba(245,158,11,.5); color: #92400e; }}
   .flag.bad {{ background: rgba(239,68,68,.08);  border: 1px solid rgba(239,68,68,.45); color: #991b1b; }}
+  .flag-emoji {{ font-size: 18px; line-height: 1; }}
 
   /* tables */
   .tbl-wrap {{ overflow-x: auto; }}
@@ -68,6 +69,56 @@ GLOBAL_CSS = f"""
   .tbl tr:last-child td {{ border-bottom: none; }}
   .tbl .rec {{ background: rgba(22,163,74,.07); font-weight: 700; }}
   .tbl .rec td {{ color: #15803d; }}
+
+  /* dot-grid headline */
+  .dot-grid-block {{ margin: 8px 0 16px; }}
+  .dot-grid {{
+    display: grid;
+    grid-template-columns: repeat(10, 14px);
+    gap: 4px;
+    margin-bottom: 10px;
+  }}
+  .dot {{
+    width: 14px; height: 14px; border-radius: 50%;
+    display: inline-block;
+  }}
+  .dot-headline {{
+    display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+    margin-bottom: 6px;
+  }}
+  .dot-big {{ font-size: 26px; font-weight: 800; color: #16a34a; line-height: 1; }}
+  .dot-ctx {{ font-size: 16px; color: #1a1a1a; font-weight: 600; }}
+  .dot-explainer {{ font-size: 14px; color: #6b7280; margin: 0; max-width: 680px; }}
+
+  /* downside callout */
+  .callout-amber {{
+    background: rgba(245,158,11,.09);
+    border: 1px solid rgba(245,158,11,.5);
+    border-left: 4px solid #d97706;
+    border-radius: 10px;
+    padding: 14px 18px;
+    font-size: 15px;
+    color: #78350f;
+    margin: 12px 0 10px;
+    line-height: 1.55;
+  }}
+  .callout-amber .caveat {{
+    display: block;
+    font-size: 13px;
+    color: #92400e;
+    margin-top: 8px;
+    font-style: italic;
+  }}
+
+  /* frontier expander caveat */
+  .frontier-caveat {{
+    font-size: 13px;
+    color: #6b7280;
+    margin: 12px 0 4px;
+    border-left: 3px solid #e5e7eb;
+    padding-left: 10px;
+    font-style: italic;
+  }}
 
   .disclaimer {{ font-size: 12px; color: {MUTED}; border-top: 1px solid {LINE};
                  margin-top: 28px; padding-top: 14px; line-height: 1.6; }}

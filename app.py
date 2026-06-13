@@ -6,6 +6,7 @@ deeper detail (year-by-year breakdown, allocation table, distributions,
 assumptions) behind expanders. Inputs live in the sidebar, grouped and
 plain-English, and persist in the URL so a tuned scenario is a shareable link.
 """
+import hashlib
 import json
 import numpy as np
 import plotly.graph_objects as go
@@ -17,9 +18,16 @@ from model.normalisation import PORTFOLIO_PROFILES
 from config import STAGE_3_BRACKETS
 from ui.common import (GREEN, TEAL, AMBER, RED, AMBER_DK, INK, MUTED, FAINT, LINE,
                        GLOBAL_CSS, _render_html, _fmt_money, _fmt_dollars, _fmt_pct)
-from ui.persona import (compute_persona_sweep, find_optimal_mix,
-                        render_persona_cards, render_comparison_table)
+from model.mix_curve import build_mix_curve
+from ui.persona import find_optimal_mix, render_persona_cards
 from ui.onboarding import render_hero, render_limitations, render_full_guide
+from model.solvency import flag_forced_sales
+from ui.frontier import render_dot_grid, render_downside_callout, render_failure_taxonomy, render_frontier_expander
+from ui.compare import (
+    render_ab_mini_cards, render_ab_frontier,
+    render_ab_stacked_fallback, render_ab_tabs_fallback,
+    _horizons_differ, _display_mode_mismatch,
+)
 
 
 # ============================================================================
@@ -61,6 +69,14 @@ def qp(key, cast, default):
         return default
 
 
+def _input_hash(kwargs: dict) -> str:
+    """Stable hash of run_monte_carlo kwargs for change-detection.
+    Uses json.dumps with sort_keys so dict ordering doesn't affect the hash."""
+    return hashlib.md5(
+        json.dumps(kwargs, sort_keys=True, default=str).encode()
+    ).hexdigest()
+
+
 # ============================================================================
 # Year-by-year breakdown
 # ============================================================================
@@ -81,6 +97,7 @@ def render_year_by_year_chart(result, horizon, mix_pct, deflate, yearly_deflator
     if mix_pct < 100:
         series.append((f"Mix ({mix_pct}/{100-mix_pct})", "mixed_wealth_path", GREEN))
 
+    DASH_STYLES = {AMBER: "solid", TEAL: "dash", GREEN: "dot"}
     fig = go.Figure()
     for label, key, colour in series:
         arr = result[key] / yearly_deflator if deflate else result[key]
@@ -93,7 +110,7 @@ def render_year_by_year_chart(result, horizon, mix_pct, deflate, yearly_deflator
                       fill="toself", fillcolor=f"rgba({rgba},.16)", line=dict(width=0),
                       hoverinfo="skip", showlegend=False))
         fig.add_trace(go.Scatter(x=years, y=p50, mode="lines", name=label,
-                      line=dict(color=colour, width=2.5),
+                      line=dict(color=colour, width=2.5, dash=DASH_STYLES[colour]),
                       hovertemplate=f"{label}: %{{y:$,.0f}} (yr %{{x}})<extra></extra>"))
     fig.add_vline(x=5, line_dash="dot", line_color=MUTED,
                   annotation_text="loan starts repaying principal", annotation_font_size=10)
@@ -233,13 +250,8 @@ with st.sidebar:
     )
 
     st.markdown("**The choice**")
-    _custom = st.session_state.get("persona_pick") == "Custom"
-    property_share_mix_pct = st.slider(
-        "Custom mix (% property)", 0, 100, qp("mix", int, 50), step=10,
-        disabled=not _custom,
-        help="Enabled when you pick 'Custom' above. Otherwise the chosen persona sets the mix.",
-    )
-    property_share_mix = property_share_mix_pct / 100
+    # Custom mix slider removed (Task 5): mix is now driven by the in-expander
+    # free_mix_slider. Alias property_share_mix_pct → free_mix_pct for URL persistence.
     portfolio_profile = st.selectbox(
         "If you bought shares, which?", ["asx_only", "global", "blended"], index=qp("port", int, 2),
         format_func=lambda x: {"asx_only": "Australian (ASX)", "global": "Global",
@@ -302,7 +314,12 @@ with st.sidebar:
                 help="New builds keep current rules per the Budget announcement. Tick to model the counterfactual.")
         else:
             override_new_build_carveout = False
-        rental_yield_sigma = 0.0
+        rental_yield_sigma = st.slider(
+            "Rent ups & downs (yearly drift in rental yield)",
+            0.0, 1.5, 0.5, step=0.1, format="±%.1f%%",
+            help="Slow drift in the rent level (on top of vacancy). "
+                 "0 = fixed yield; 0.5pp is the calibrated default.",
+        ) / 100
 
 # ---------------------------------------------------------------------------
 # Input validation
@@ -325,10 +342,29 @@ if errors:
 # Clamp persona to a valid option: a deselected segmented_control sets persona_pick to
 # None, which must never reach the URL (str(None) == "None" is not a valid option and
 # would crash the segmented_control default on the next load).
-VALID_PERSONAS = ("Safe", "Balanced", "Wealth Maximizer", "Custom")
-_persona_qp = st.session_state.get("persona_pick") if "persona_pick" in st.session_state else qp("persona", str, "Balanced")
+VALID_PERSONAS = ("Safe · 99%+", "Balanced · 95%+", "Growth-focused · 85%+", "Custom")
+# Fix 3: Consume any pending persona override from the previous rerun (set below after the
+# frontier expander).  Must happen BEFORE the segmented_control widget is instantiated so
+# session_state["persona_pick"] can be written without raising StreamlitAPIException.
+if st.session_state.get("_pending_persona") == "Custom":
+    st.session_state["persona_pick"] = "Custom"
+    del st.session_state["_pending_persona"]
+_persona_qp = st.session_state.get("persona_pick") if "persona_pick" in st.session_state else qp("persona", str, "Balanced · 95%+")
 if _persona_qp not in VALID_PERSONAS:
-    _persona_qp = "Balanced"
+    _persona_qp = "Balanced · 95%+"
+# --- New URL-persisted allocation controls (clamped on read AND write) ---
+# dial_safety: integer percent in [50, 99]; default 95.
+_dial_raw = qp("dial_safety", int, 95)
+dial_safety_pct = max(50, min(99, _dial_raw))  # clamped once on read; write uses this directly
+
+# free_mix: integer percent of property in [0, 100]; default 50.
+_free_mix_raw = qp("free_mix", int, 50)
+free_mix_pct = max(0, min(100, _free_mix_raw))  # clamped once on read; write uses this directly
+
+# A4 — alias: sidebar Custom mix slider removed; free_mix_pct is now the sole source of truth.
+property_share_mix_pct = free_mix_pct
+property_share_mix = property_share_mix_pct / 100
+
 st.query_params.update({k: str(v) for k, v in {
     "price": purchase_price, "dep": deposit_pct, "yield": round(gross_yield * 100, 1),
     "age": ["new_build", "established_post_2017", "established_pre_2017"].index(property_age),
@@ -336,10 +372,12 @@ st.query_params.update({k: str(v) for k, v in {
     "income": income, "rate": round(loan_rate * 100, 1), "yrs": horizon, "topup": max_top_up,
     "landtax": annual_land_tax,
     "persona": _persona_qp,
-    **({"mix": property_share_mix_pct} if _persona_qp == "Custom" else {}),
+    **({"mix": free_mix_pct} if _persona_qp == "Custom" else {}),
     "port": ["asx_only", "global", "blended"].index(portfolio_profile),
     "regime": ["current", "restricted_2027"].index(property_regime),
     "state": state,
+    "dial_safety": dial_safety_pct,
+    "free_mix": free_mix_pct,
 }.items()})
 
 # Stamp duty + buying costs
@@ -371,62 +409,161 @@ run_kwargs = dict(
 )
 
 
-@st.cache_data(show_spinner="Running 5,000 simulated futures…")
+@st.cache_data
 def cached_run(**kwargs):
     return run_monte_carlo(**kwargs)
 
 
+def _build_scenario_curve(run_kwargs: dict, max_top_up: float) -> list:
+    """Derive a mix curve from run_kwargs using the same cached base run.
+
+    Reuses cached_run (cache hit when params match the current scenario).
+    Always runs at property_share_mix=1.0 to get unblended arrays.
+    Returns list[MixPoint].
+    """
+    result = cached_run(trials=5000, property_share_mix=1.0, **run_kwargs)
+    return build_mix_curve(
+        p_terminal=result["property_terminal_wealth"],
+        s_terminal=result["shares_terminal_wealth"],
+        p_outside_cash=result["outside_cash_per_trial_year"],
+        ceiling=max_top_up,
+    )
+
+
 # ---------------------------------------------------------------------------
-# Recommendation (perf: sweep runs only on demand, not every slider drag)
+# A/B Scenario compare: save / clear snapshot control (Phase 3 Task 2)
+# Placed in a second with st.sidebar: block so it renders below the main inputs
+# but has access to the fully-assembled run_kwargs. Streamlit merges multiple
+# sidebar contributions in source order.
+# CRITICAL: snapshot is session-only — never written to URL / st.query_params.
 # ---------------------------------------------------------------------------
-sweep_kwargs = dict(run_kwargs)  # already carries serviceability_ceiling
-sweep_key = json.dumps(sweep_kwargs, sort_keys=True, default=str)
+with st.sidebar:
+    st.markdown("---")
+    st.markdown("**Compare scenarios**")
+    _snap = st.session_state.get("_scenario_a")
+    if _snap is None:
+        if st.button("Save snapshot", key="save_snapshot_btn",
+                     help="Pin these inputs as Scenario A to compare against future changes."):
+            _snap_curve = _build_scenario_curve(run_kwargs, max_top_up)
+            _balanced_pt = find_optimal_mix(_snap_curve, 0.95)
+            st.session_state["_scenario_a"] = {
+                "run_kwargs": dict(run_kwargs),
+                "max_top_up": max_top_up,
+                "display_mode": display_mode,
+                "comparison_mode": comparison_mode,
+                "horizon": horizon,
+                "property_regime": effective_property_regime,
+                "label": f"A · {effective_property_regime} · {display_mode}",
+                "curve": _snap_curve,
+                "median_wealth": float(
+                    max(pt.median_mixed_wealth for pt in _snap_curve)
+                ),
+                "p_solvent_balanced": (
+                    _balanced_pt.p_solvent if _balanced_pt is not None else 0.0
+                ),
+            }
+            st.rerun()
+    else:
+        st.info(f"Saved: {_snap['label']}", icon="📌")
+        if st.button("Clear comparison", key="clear_snapshot_btn"):
+            del st.session_state["_scenario_a"]
+            st.rerun()
 
-st.markdown('<div class="pvs-section">Recommended allocation for you</div>', unsafe_allow_html=True)
-st.markdown('<div class="pvs-section-sub">Pick the safety level that matches your comfort with risk — '
-            'the optimiser finds the property/shares mix that delivers it with the most wealth.</div>',
-            unsafe_allow_html=True)
 
-stale = st.session_state.get("sweep_key") != sweep_key
-c1, c2 = st.columns([1, 3])
-with c1:
-    recompute = st.button("↻ Update recommendations", type="primary" if stale else "secondary",
-                          width="stretch")
-if recompute or "sweep_rows" not in st.session_state:
-    st.session_state["sweep_rows"] = compute_persona_sweep(**sweep_kwargs)
-    st.session_state["sweep_key"] = sweep_key
-    stale = False
-with c2:
-    if stale:
-        st.info("Inputs changed — click **↻ Update recommendations** to refresh the cards below.")
-sweep_rows = st.session_state["sweep_rows"]
+# ---------------------------------------------------------------------------
+# Base run (one simulation; no per-mix re-runs) + input-hash auto-recompute
+# ---------------------------------------------------------------------------
+# Hash the full run_kwargs to detect input changes.
+_current_hash = _input_hash({**run_kwargs, "trials": 5000})
 
-render_persona_cards(sweep_rows, horizon)
-balanced = find_optimal_mix(sweep_rows, 0.95)
-PERSONA_TO_THRESHOLD = {"Safe": 0.99, "Balanced": 0.95, "Wealth Maximizer": 0.85}
-options = ["Safe", "Balanced", "Wealth Maximizer", "Custom"]
-label_map = {k: (k + " ★" if k == "Balanced" and not stale else k) for k in options}
-if stale:
-    st.caption("Recommendations are stale — click ↻ Update recommendations.")
-_persona_default = qp("persona", str, "Balanced")
-if _persona_default not in options:  # guard stale/invalid URL values (e.g. "None")
-    _persona_default = "Balanced"
-picked = st.segmented_control(
-    "View breakdown for", options, format_func=lambda k: label_map[k],
-    default=_persona_default, key="persona_pick",
+_stale = st.session_state.get("_run_hash") != _current_hash
+_prior_result = st.session_state.get("_base_result")
+
+if _stale or _prior_result is None:
+    # Input changed (or first load): recompute. Show spinner; dim prior result via CSS.
+    with st.spinner("Running 5,000 simulated futures…"):
+        try:
+            _new_result = cached_run(trials=5000, property_share_mix=1.0, **run_kwargs)
+            st.session_state["_base_result"] = _new_result
+            st.session_state["_run_hash"] = _current_hash
+        except Exception as _e:
+            st.error(
+                "Something went wrong — try a shorter horizon or smaller deposit. "
+                f"(Detail: {_e})"
+            )
+            st.stop()
+
+base_result = st.session_state["_base_result"]
+
+# Build the mix curve from the base run (sub-second; pure NumPy post-processing).
+mix_curve = build_mix_curve(
+    p_terminal=base_result["property_terminal_wealth"],
+    s_terminal=base_result["shares_terminal_wealth"],
+    p_outside_cash=base_result["outside_cash_per_trial_year"],
+    ceiling=max_top_up,
 )
-if picked is None:
-    picked = "Balanced"
-if picked == "Custom":
+
+balanced = find_optimal_mix(mix_curve, 0.95)
+PERSONA_TO_THRESHOLD = {
+    "Safe · 99%+": 0.99,
+    "Balanced · 95%+": 0.95,
+    "Growth-focused · 85%+": 0.85,
+}
+options = ["Safe · 99%+", "Balanced · 95%+", "Growth-focused · 85%+", "Custom"]
+label_map = {k: k for k in options}
+_persona_default = qp("persona", str, "Balanced · 95%+")
+if _persona_default not in options:  # guard stale/invalid URL values (e.g. old names, "None")
+    _persona_default = "Balanced · 95%+"
+
+# Derive breakdown_mix_pct from session state (from prior rerun) or URL params.
+# The segmented_control widget is rendered in position 5 of the spec §4 hierarchy (below
+# the headline and callout); its value is available via session_state from the previous
+# rerun, giving us breakdown_mix_pct here before the widget is placed on screen.
+_picked_from_state = st.session_state.get("persona_pick")
+if _picked_from_state not in options or _picked_from_state is None:
+    _picked_from_state = _persona_default
+if _picked_from_state == "Custom":
     breakdown_mix_pct = property_share_mix_pct
 else:
-    _row = find_optimal_mix(sweep_rows, PERSONA_TO_THRESHOLD[picked])
-    breakdown_mix_pct = _row["mix_pct"] if _row else (balanced["mix_pct"] if balanced else 50)
-recommended_mix = breakdown_mix_pct
+    _row = find_optimal_mix(mix_curve, PERSONA_TO_THRESHOLD[_picked_from_state])
+    breakdown_mix_pct = int(round(_row.mix_pct * 100)) if _row else (
+        int(round(find_optimal_mix(mix_curve, 0.95).mix_pct * 100))
+        if find_optimal_mix(mix_curve, 0.95) else 50
+    )
 
-# Run simulation for the selected breakdown mix
+# Derive per-render mixed arrays from base_result (no second simulation).
+# All mix-specific arrays are computed post-hoc from the base run's unblended paths.
 breakdown_mix = breakdown_mix_pct / 100
-result = cached_run(trials=5000, property_share_mix=breakdown_mix, **run_kwargs)
+result = dict(base_result)  # shallow copy so we can add mix-specific keys
+result["mixed_terminal_wealth"] = (
+    breakdown_mix * base_result["property_terminal_wealth"]
+    + (1.0 - breakdown_mix) * base_result["shares_terminal_wealth"]
+)
+result["median_mixed_wealth"] = float(np.median(result["mixed_terminal_wealth"]))
+result["mixed_outside_cash_per_trial_year"] = (
+    breakdown_mix * base_result["outside_cash_per_trial_year"]
+)
+_mixed_flags = flag_forced_sales(result["mixed_outside_cash_per_trial_year"], max_top_up)
+result["p_mix_solvent"] = float(1.0 - _mixed_flags.mean())
+result["p_mix_beats_pure_shares"] = float(
+    ((result["mixed_terminal_wealth"] > base_result["shares_terminal_wealth"])
+     & ~_mixed_flags).mean()
+)
+result["mixed_wealth_path"] = (
+    breakdown_mix * base_result["property_wealth_path"]
+    + (1.0 - breakdown_mix) * base_result["shares_wealth_path"]
+)
+# worst_year_cash for feasibility flag: use mix-scaled outside cash (spec §5.3 fix)
+result["worst_year_cash"] = float(
+    np.percentile(result["mixed_outside_cash_per_trial_year"].max(axis=1), 90)
+) if breakdown_mix > 0.0 else 0.0
+
+# Compute downside callout figures from NOMINAL arrays (before deflation loop).
+# A5: _total_top_ups and _forced_sale_rate must come from the pre-deflation
+# mixed_outside_cash_per_trial_year to avoid double-deflation.
+_nominal_mixed_oc = result["mixed_outside_cash_per_trial_year"]  # nominal at this point
+_callout_total_top_ups = float(np.median(_nominal_mixed_oc.sum(axis=1))) if breakdown_mix > 0.0 else 0.0
+_callout_forced_sale_rate = float(flag_forced_sales(_nominal_mixed_oc, max_top_up).mean()) if breakdown_mix > 0.0 else 0.0
 
 # Deflation to today's dollars
 deflate = display_mode == "today"
@@ -437,7 +574,11 @@ if deflate:
               "median_shares_wealth", "mixed_terminal_wealth", "median_mixed_wealth"]:
         result[k] = result[k] / term_deflator
     per_year_keys = [
-        "outside_cash_per_trial_year", "mixed_outside_cash_per_trial_year",
+        # NOTE: outside_cash_per_trial_year and mixed_outside_cash_per_trial_year
+        # are intentionally excluded from deflation here.  The cashflow-stress chart
+        # plots these cash arrays against the nominal max_top_up ceiling line; keeping
+        # both on the same nominal basis avoids a mismatch.  The safety flag and
+        # callout also need nominal cash figures.
         "property_wealth_path", "shares_wealth_path", "mixed_wealth_path",
         "property_value_path", "property_loan_balance_path", "property_rent_path",
         "property_interest_path", "property_other_costs_path", "property_depreciation_path",
@@ -447,43 +588,155 @@ if deflate:
     ]
     for k in per_year_keys:
         result[k] = result[k] / yearly_deflator
-    result["worst_year_cash"] = float(np.percentile(result["outside_cash_per_trial_year"].max(axis=1), 90))
+    # NOTE: worst_year_cash is intentionally NOT deflated here.
+    # It is a cash-safety figure kept in nominal (future) dollars so the flag
+    # can compare it against the nominal max_top_up ceiling consistently.
+    # Deflating it would make the scenario look safer than it actually is.
 
-# "What now?" guidance
-_render_html(f"""
-<div class="blurb" style="max-width:none;margin-top:6px;">
-<b>What this means:</b> if you want both, the recommended split is the most wealth at that safety level — e.g. put the
-property-share of your savings toward the property and the rest into shares. It is <i>not</i> a push to own both.
-Next step: talk to a licensed financial adviser about your loan approval, tax, and goals.
+# ---------------------------------------------------------------------------
+# RENDER SECTION — spec §4 hierarchy order
+# All computations above are complete; only render calls from here on.
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# A/B Scenario compare section (Phase 3) — shown only when a snapshot is saved.
+# A = saved snapshot (params + pre-computed curve from session_state).
+# B = current live scenario (mix_curve already built above).
+# No URL writes; snapshot is session-only.
+# ---------------------------------------------------------------------------
+_snap = st.session_state.get("_scenario_a")
+if _snap is not None:
+    b_curve = mix_curve  # current scenario's curve (already built above)
+    b_label = f"B (current) · {effective_property_regime} · {display_mode}"
+    a_label = _snap["label"]
+
+    # Guard: display-mode mismatch — warn but still render
+    if _display_mode_mismatch(_snap, display_mode):
+        st.warning(
+            f"Scenario A was saved in **{_snap['display_mode']}** mode; "
+            f"current view is **{display_mode}**. "
+            "The comparison uses each curve's own saved values — switch 'Show dollars as' "
+            "to match for a like-for-like overlay.",
+            icon="⚠️",
+        )
+
+    # Guard: differing horizons → stacked fallback
+    if _horizons_differ(_snap, horizon):
+        render_ab_stacked_fallback(
+            a_curve=_snap["curve"],
+            b_curve=b_curve,
+            a_label=a_label,
+            b_label=b_label,
+            a_horizon=_snap["horizon"],
+            b_horizon=horizon,
+        )
+    else:
+        # Same horizon → overlaid or tabbed view
+        st.markdown(
+            f'<div class="pvs-section">Comparing: {a_label} vs {b_label}</div>',
+            unsafe_allow_html=True,
+        )
+        side_by_side = st.checkbox(
+            "Side-by-side (tablet+)", value=True, key="ab_side_by_side",
+            help="Uncheck on small screens to switch to a tab view (A / B / Compare).",
+        )
+        if side_by_side:
+            render_ab_mini_cards(
+                a_curve=_snap["curve"], b_curve=b_curve,
+                a_label=a_label, b_label=b_label, horizon=horizon,
+            )
+            render_ab_frontier(
+                a_curve=_snap["curve"], b_curve=b_curve,
+                a_label=a_label, b_label=b_label,
+                horizon=horizon, dial_safety_pct=dial_safety_pct,
+            )
+        else:
+            render_ab_tabs_fallback(
+                a_curve=_snap["curve"], b_curve=b_curve,
+                a_label=a_label, b_label=b_label,
+                horizon=horizon, dial_safety_pct=dial_safety_pct,
+            )
+
+    st.markdown("---")
+
+# 1. Example-data nudge
+_render_html("""
+<div class="pvs-section-sub" style="margin-top:4px;padding:10px 14px;
+  background:rgba(245,158,11,.07);border-radius:8px;border:1px solid rgba(245,158,11,.3);">
+  <b>These are example numbers</b> — change them in the left panel to match your situation.
 </div>""")
 
-render_limitations()
-
-st.markdown("---")
-
-# ---------------------------------------------------------------------------
-# Headline + feasibility + tiles
-# ---------------------------------------------------------------------------
-n = result["property_terminal_wealth"].size
-_render_html(f"""
-<div class="headline"><span class="big">{result['p_property_succeeds']:.0%}</span>
-<span class="ctx">of {n:,} simulated {horizon}-year futures, property both beats shares <i>and</i> keeps you solvent.</span></div>
-<div class="pvs-section-sub">Property beats shares in {result['p_property_wins']:.0%} of futures, but only
-{result['p_solvent']:.0%} stay within your {_fmt_money(max_top_up)} cash ceiling. "Succeeds" needs both.</div>
-""")
-
-# Feasibility flag
+# 2. Viability flag (reworded: "Within range" replaces "Comfortable")
 wyc = result["worst_year_cash"]
 if wyc <= max_top_up:
-    flag = ("ok", f"✅ Comfortable — the worst simulated year needs about {_fmt_money(wyc)}, within your "
-                  f"{_fmt_money(max_top_up)} ceiling.")
+    flag = ("ok", f"Within range — the worst simulated year needs about {_fmt_money(wyc)}, "
+                  f"inside your {_fmt_money(max_top_up)} ceiling.")
 elif wyc <= max_top_up * 1.25:
-    flag = ("warn", f"⚠️ Tight — a bad year could need about {_fmt_money(wyc)} vs your {_fmt_money(max_top_up)} "
-                    f"ceiling. A rate or rent shock could tip you over.")
+    flag = ("warn", f"Tight — a bad year could need about {_fmt_money(wyc)} vs your "
+                    f"{_fmt_money(max_top_up)} ceiling. A rate or rent shock could tip you over.")
 else:
-    flag = ("bad", f"❌ Stretched — a bad year could need about {_fmt_money(wyc)}, well above your "
+    flag = ("bad", f"Stretched — a bad year could need about {_fmt_money(wyc)}, well above your "
                    f"{_fmt_money(max_top_up)} ceiling. Consider more shares or a bigger deposit.")
-_render_html(f'<div class="flag {flag[0]}">{flag[1]}</div>')
+_render_html(
+    f'<div class="flag {flag[0]}">'
+    f'<span class="flag-emoji">{"✅" if flag[0]=="ok" else "⚠️" if flag[0]=="warn" else "❌"}'
+    f'</span> {flag[1]}</div>'
+)
+if deflate:
+    st.caption(
+        "Cash figures above (worst year, ceiling) are in future (nominal) dollars — "
+        "not deflated like the wealth numbers."
+    )
+
+# 3. Headline — dot grid + natural-frequency phrasing + pvs-section-sub context line
+n = result["property_terminal_wealth"].size
+render_dot_grid(
+    p_succeeds=result["p_property_succeeds"],
+    n_trials=int(n),
+    horizon=horizon,
+)
+_render_html(f"""<div class="pvs-section-sub">Property beats shares in
+{result['p_property_wins']:.0%} of stories, but only {result['p_solvent']:.0%}
+stay within your {_fmt_money(max_top_up)} cash ceiling. "Succeeds" needs both.</div>""")
+
+# 4. Downside callout + failure-taxonomy expander
+render_downside_callout(
+    worst_year_cash=result["worst_year_cash"],
+    total_top_ups=_callout_total_top_ups,
+    forced_sale_rate=_callout_forced_sale_rate,
+    max_top_up=max_top_up,
+    breakdown_mix=breakdown_mix,
+    mixed_outside_cash=result["mixed_outside_cash_per_trial_year"],
+    mixed_terminal=result["mixed_terminal_wealth"],
+    s_terminal=base_result["shares_terminal_wealth"],
+    ceiling=max_top_up,
+    deflate=deflate,
+)
+
+with st.expander("What are the failure modes? (2×2 breakdown)"):
+    render_failure_taxonomy(
+        mixed_outside_cash=result["mixed_outside_cash_per_trial_year"],
+        mixed_terminal=result["mixed_terminal_wealth"],
+        s_terminal=base_result["shares_terminal_wealth"],
+        ceiling=max_top_up,
+    )
+
+# 5. Cards — section header + persona cards + segmented_control
+st.markdown('<div class="pvs-section">What the model suggests at each safety level</div>',
+            unsafe_allow_html=True)
+st.markdown('<div class="pvs-section-sub">Pick the safety level that matches your comfort — '
+            'the model finds the property/shares mix that delivers it with the most wealth.</div>',
+            unsafe_allow_html=True)
+render_persona_cards(mix_curve, horizon)
+
+# Segmented control: renders here (position 5); its value was already read from session
+# state above for the computation block. On next rerun the session-state value is current.
+picked = st.segmented_control(
+    "View breakdown for", options, format_func=lambda k: label_map[k],
+    default=_persona_default, key="persona_pick",
+)
+if picked is None:
+    picked = "Balanced · 95%+"
 
 if breakdown_mix < 1.0:
     pp = int(breakdown_mix * 100)
@@ -501,6 +754,45 @@ _render_html(f"""
 </div>
 """)
 
+render_limitations()
+
+# ---------------------------------------------------------------------------
+# Frontier expander (Task 5) — "How much safety does each mix buy?"
+# Dial + free-mix slider live here; returns updated values to write back to URL.
+# ---------------------------------------------------------------------------
+_new_dial, _new_free_mix = render_frontier_expander(
+    mix_curve=mix_curve,
+    horizon=horizon,
+    breakdown_mix_pct=breakdown_mix_pct,
+    dial_safety_pct=dial_safety_pct,
+    free_mix_pct=free_mix_pct,
+    max_top_up=max_top_up,
+)
+
+# Write back URL params for dial and free_mix (clamped).
+# IMPORTANT: capture the prior free_mix value BEFORE writing to query_params so
+# the change-detection below compares new vs. old (not new vs. new).
+# free_mix_pct here is the value read from URL at startup (line ~356); it hasn't
+# changed yet, so it correctly represents the prior run's value.
+_prior_free_mix = free_mix_pct
+dial_safety_pct = max(50, min(99, _new_dial))
+free_mix_pct = max(0, min(100, _new_free_mix))
+st.query_params["dial_safety"] = str(dial_safety_pct)
+st.query_params["free_mix"] = str(free_mix_pct)
+
+# If user moved the free-mix slider (new value differs from prior), flip to "Custom".
+# Comparing _new_free_mix against _prior_free_mix (not qp("free_mix") which now
+# reads the just-written value and would always equal _new_free_mix → never flips).
+#
+# We cannot write st.session_state["persona_pick"] directly here — the segmented_control
+# widget with key "persona_pick" has already been instantiated above (line ~734), and
+# Streamlit raises StreamlitAPIException if you modify its session state after render.
+# Instead, write to a pending-override key that is consumed at the TOP of the NEXT rerun,
+# before the widget is instantiated, and triggers a second rerun so the UI reflects the flip.
+if _new_free_mix != _prior_free_mix:
+    st.session_state["_pending_persona"] = "Custom"
+    st.rerun()
+
 # ---------------------------------------------------------------------------
 # Detail expanders
 # ---------------------------------------------------------------------------
@@ -512,8 +804,8 @@ with st.expander("📈 Year-by-year breakdown (chart + table)"):
     st.markdown("**Shares — year by year**")
     render_shares_year_table(result, horizon, breakdown_mix_pct, deflate, yearly_deflator)
 
-with st.expander("⚖️ Compare all property/shares mixes"):
-    render_comparison_table(sweep_rows, recommended_mix)
+# NOTE: "Compare all mixes" standalone expander removed (Task 5).
+# The same data is now accessible via the "Show as table" toggle in the frontier expander.
 
 with st.expander("🎲 Range of outcomes & cashflow stress"):
     fig = go.Figure()
@@ -547,6 +839,11 @@ with st.expander("🎲 Range of outcomes & cashflow stress"):
                       height=360, margin=dict(t=50), hovermode="x unified")
     fig2.update_xaxes(gridcolor="#f0f0f0"); fig2.update_yaxes(gridcolor="#f0f0f0")
     st.plotly_chart(fig2, width="stretch")
+    if deflate:
+        st.caption(
+            "Cash figures and ceiling above are in future (nominal) dollars — "
+            "consistent with each other and with the viability flag."
+        )
 
 render_full_guide()
 
