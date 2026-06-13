@@ -1112,11 +1112,11 @@ Before any behavior-affecting change, establish: (a) `run_monte_carlo` already e
       p_terminal=base_result["property_terminal_wealth"],
       s_terminal=base_result["shares_terminal_wealth"],
       p_outside_cash=base_result["outside_cash_per_trial_year"],
-      p_wealth_path=base_result["property_wealth_path"],
-      s_wealth_path=base_result["shares_wealth_path"],
       ceiling=max_top_up,
   )
   ```
+
+  NOTE: `build_mix_curve` does NOT take `p_wealth_path`/`s_wealth_path` (removed in Task 1 cleanup — they were unused; the year-by-year wealth paths are blended directly from `base_result` in 2b-ix below).
 
   **2b-vi: Replace sweep_rows references throughout the file**
 
