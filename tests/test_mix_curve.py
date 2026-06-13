@@ -94,8 +94,6 @@ def test_build_mix_curve_returns_21_points(base_run_200):
         p_terminal=r["property_terminal_wealth"],
         s_terminal=r["shares_terminal_wealth"],
         p_outside_cash=r["outside_cash_per_trial_year"],
-        p_wealth_path=r["property_wealth_path"],
-        s_wealth_path=r["shares_wealth_path"],
         ceiling=20_000,
     )
     assert len(curve) == 21
@@ -110,8 +108,6 @@ def test_build_mix_curve_mix_pcts_are_linspace(base_run_200):
         p_terminal=r["property_terminal_wealth"],
         s_terminal=r["shares_terminal_wealth"],
         p_outside_cash=r["outside_cash_per_trial_year"],
-        p_wealth_path=r["property_wealth_path"],
-        s_wealth_path=r["shares_wealth_path"],
         ceiling=20_000,
     )
     expected = np.linspace(0, 1, 21)
@@ -126,8 +122,6 @@ def test_build_mix_curve_probabilities_in_range(base_run_200):
         p_terminal=r["property_terminal_wealth"],
         s_terminal=r["shares_terminal_wealth"],
         p_outside_cash=r["outside_cash_per_trial_year"],
-        p_wealth_path=r["property_wealth_path"],
-        s_wealth_path=r["shares_wealth_path"],
         ceiling=20_000,
     )
     for pt in curve:
@@ -161,8 +155,6 @@ def test_build_mix_curve_engine_equivalence_at_0_6():
         p_terminal=base["property_terminal_wealth"],
         s_terminal=base["shares_terminal_wealth"],
         p_outside_cash=base["outside_cash_per_trial_year"],
-        p_wealth_path=base["property_wealth_path"],
-        s_wealth_path=base["shares_wealth_path"],
         ceiling=20_000,
     )
     # mix_pct = 0.6 is index 12 in linspace(0,1,21)
@@ -200,8 +192,6 @@ def test_build_mix_curve_engine_equivalence_at_1_0():
         p_terminal=base["property_terminal_wealth"],
         s_terminal=base["shares_terminal_wealth"],
         p_outside_cash=base["outside_cash_per_trial_year"],
-        p_wealth_path=base["property_wealth_path"],
-        s_wealth_path=base["shares_wealth_path"],
         ceiling=20_000,
     )
     pt = curve[-1]  # index 20, mix_pct=1.0
@@ -221,8 +211,6 @@ def test_build_mix_curve_engine_equivalence_at_0_0():
         p_terminal=base["property_terminal_wealth"],
         s_terminal=base["shares_terminal_wealth"],
         p_outside_cash=base["outside_cash_per_trial_year"],
-        p_wealth_path=base["property_wealth_path"],
-        s_wealth_path=base["shares_wealth_path"],
         ceiling=20_000,
     )
     pt = curve[0]  # index 0, mix_pct=0.0
@@ -245,8 +233,6 @@ def test_worst_year_cash_definition(base_run_200):
         p_terminal=r["property_terminal_wealth"],
         s_terminal=r["shares_terminal_wealth"],
         p_outside_cash=r["outside_cash_per_trial_year"],
-        p_wealth_path=r["property_wealth_path"],
-        s_wealth_path=r["shares_wealth_path"],
         ceiling=20_000,
     )
     # mix=0.5 is index 10 of linspace(0,1,21)
@@ -266,8 +252,6 @@ def test_total_top_ups_definition(base_run_200):
         p_terminal=r["property_terminal_wealth"],
         s_terminal=r["shares_terminal_wealth"],
         p_outside_cash=r["outside_cash_per_trial_year"],
-        p_wealth_path=r["property_wealth_path"],
-        s_wealth_path=r["shares_wealth_path"],
         ceiling=20_000,
     )
     pt = curve[10]
@@ -285,8 +269,6 @@ def test_forced_sale_rate_definition(base_run_200):
         p_terminal=r["property_terminal_wealth"],
         s_terminal=r["shares_terminal_wealth"],
         p_outside_cash=r["outside_cash_per_trial_year"],
-        p_wealth_path=r["property_wealth_path"],
-        s_wealth_path=r["shares_wealth_path"],
         ceiling=20_000,
     )
     pt = curve[10]
@@ -303,8 +285,6 @@ def test_mix_aware_downside_at_mix_zero_is_zero(base_run_200):
         p_terminal=r["property_terminal_wealth"],
         s_terminal=r["shares_terminal_wealth"],
         p_outside_cash=r["outside_cash_per_trial_year"],
-        p_wealth_path=r["property_wealth_path"],
-        s_wealth_path=r["shares_wealth_path"],
         ceiling=20_000,
     )
     pt = curve[0]
@@ -321,8 +301,6 @@ def test_mix_aware_downside_scales_with_mix(base_run_200):
         p_terminal=r["property_terminal_wealth"],
         s_terminal=r["shares_terminal_wealth"],
         p_outside_cash=r["outside_cash_per_trial_year"],
-        p_wealth_path=r["property_wealth_path"],
-        s_wealth_path=r["shares_wealth_path"],
         ceiling=20_000,
     )
     half = curve[10]   # mix=0.5
@@ -344,8 +322,6 @@ def test_crn_p_solvent_near_monotone_gaussian(base_run_5000):
         p_terminal=r["property_terminal_wealth"],
         s_terminal=r["shares_terminal_wealth"],
         p_outside_cash=r["outside_cash_per_trial_year"],
-        p_wealth_path=r["property_wealth_path"],
-        s_wealth_path=r["shares_wealth_path"],
         ceiling=20_000,
     )
     solvencies = [pt.p_solvent for pt in curve]
@@ -367,8 +343,6 @@ def test_crn_p_solvent_near_monotone_student_t():
         p_terminal=r["property_terminal_wealth"],
         s_terminal=r["shares_terminal_wealth"],
         p_outside_cash=r["outside_cash_per_trial_year"],
-        p_wealth_path=r["property_wealth_path"],
-        s_wealth_path=r["shares_wealth_path"],
         ceiling=20_000,
     )
     solvencies = [pt.p_solvent for pt in curve]
@@ -388,16 +362,12 @@ def test_crn_suggested_mix_stable_across_runs(base_run_5000):
         p_terminal=r["property_terminal_wealth"],
         s_terminal=r["shares_terminal_wealth"],
         p_outside_cash=r["outside_cash_per_trial_year"],
-        p_wealth_path=r["property_wealth_path"],
-        s_wealth_path=r["shares_wealth_path"],
         ceiling=20_000,
     )
     curve_b = build_mix_curve(
         p_terminal=r["property_terminal_wealth"],
         s_terminal=r["shares_terminal_wealth"],
         p_outside_cash=r["outside_cash_per_trial_year"],
-        p_wealth_path=r["property_wealth_path"],
-        s_wealth_path=r["shares_wealth_path"],
         ceiling=20_000,
     )
     for a, b in zip(curve_a, curve_b):
@@ -419,8 +389,6 @@ def test_deflation_contract_curve_is_nominal(base_run_200):
         p_terminal=r["property_terminal_wealth"],
         s_terminal=r["shares_terminal_wealth"],
         p_outside_cash=r["outside_cash_per_trial_year"],
-        p_wealth_path=r["property_wealth_path"],
-        s_wealth_path=r["shares_wealth_path"],
         ceiling=20_000,
     )
     # At mix=1.0, worst_year_cash must equal the raw nominal calculation
@@ -455,7 +423,7 @@ def test_comparison_mode_realistic_vs_fair_fight_produce_different_curves():
         k: v for k, v in _BASE_KWARGS.items() if k != "mode"
     })
     fair_fight = run_monte_carlo(trials=200, horizon_years=10, mode="fair_fight", **{
-        k: v for k, v in {**_BASE_KWARGS, "mode": "fair_fight"}.items() if k != "mode"
+        k: v for k, v in _BASE_KWARGS.items() if k != "mode"
     })
 
     def _curve(r):
@@ -463,8 +431,6 @@ def test_comparison_mode_realistic_vs_fair_fight_produce_different_curves():
             p_terminal=r["property_terminal_wealth"],
             s_terminal=r["shares_terminal_wealth"],
             p_outside_cash=r["outside_cash_per_trial_year"],
-            p_wealth_path=r["property_wealth_path"],
-            s_wealth_path=r["shares_wealth_path"],
             ceiling=20_000,
         )
 

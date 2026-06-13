@@ -42,8 +42,6 @@ def build_mix_curve(
     p_terminal: np.ndarray,
     s_terminal: np.ndarray,
     p_outside_cash: np.ndarray,
-    p_wealth_path: np.ndarray,
-    s_wealth_path: np.ndarray,
     ceiling: float,
     mixes: np.ndarray | None = None,
 ) -> list[MixPoint]:
@@ -55,11 +53,6 @@ def build_mix_curve(
     s_terminal : (trials,) float — pure-shares terminal after-tax wealth per trial.
     p_outside_cash : (trials, horizon) float — pure-property outside-cash demand per trial-year.
         Scale by mix to get mixed outside-cash demand (only property carries cash demand).
-    p_wealth_path : (trials, horizon) float — pure-property wealth path per trial-year.
-    s_wealth_path : (trials, horizon) float — pure-shares wealth path per trial-year.
-        (p_wealth_path and s_wealth_path are accepted to preserve the full function signature
-        for downstream chart derivation; wealth path at a given mix is
-        mix * p_wealth_path + (1-mix) * s_wealth_path computed by callers per-render.)
     ceiling : float — serviceability ceiling in $ (same units as p_outside_cash).
     mixes : 1-D float array of mix fractions to evaluate. Defaults to np.linspace(0, 1, 21).
 
