@@ -420,6 +420,46 @@ def _build_scenario_curve(run_kwargs: dict, max_top_up: float) -> list:
 
 
 # ---------------------------------------------------------------------------
+# A/B Scenario compare: save / clear snapshot control (Phase 3 Task 2)
+# Placed in a second with st.sidebar: block so it renders below the main inputs
+# but has access to the fully-assembled run_kwargs. Streamlit merges multiple
+# sidebar contributions in source order.
+# CRITICAL: snapshot is session-only — never written to URL / st.query_params.
+# ---------------------------------------------------------------------------
+with st.sidebar:
+    st.markdown("---")
+    st.markdown("**Compare scenarios**")
+    _snap = st.session_state.get("_scenario_a")
+    if _snap is None:
+        if st.button("Save snapshot", key="save_snapshot_btn",
+                     help="Pin these inputs as Scenario A to compare against future changes."):
+            _snap_curve = _build_scenario_curve(run_kwargs, max_top_up)
+            _balanced_pt = find_optimal_mix(_snap_curve, 0.95)
+            st.session_state["_scenario_a"] = {
+                "run_kwargs": dict(run_kwargs),
+                "max_top_up": max_top_up,
+                "display_mode": display_mode,
+                "comparison_mode": comparison_mode,
+                "horizon": horizon,
+                "property_regime": effective_property_regime,
+                "label": f"A · {effective_property_regime} · {display_mode}",
+                "curve": _snap_curve,
+                "median_wealth": float(
+                    max(pt.median_mixed_wealth for pt in _snap_curve)
+                ),
+                "p_solvent_balanced": (
+                    _balanced_pt.p_solvent if _balanced_pt is not None else 0.0
+                ),
+            }
+            st.rerun()
+    else:
+        st.info(f"Saved: {_snap['label']}", icon="📌")
+        if st.button("Clear comparison", key="clear_snapshot_btn"):
+            del st.session_state["_scenario_a"]
+            st.rerun()
+
+
+# ---------------------------------------------------------------------------
 # Base run (one simulation; no per-mix re-runs) + input-hash auto-recompute
 # ---------------------------------------------------------------------------
 # Hash the full run_kwargs to detect input changes.
