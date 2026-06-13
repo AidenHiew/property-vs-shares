@@ -296,6 +296,9 @@ def run_monte_carlo(
         "p_mix_solvent": float(1 - mixed_forced_flags.mean()),
         "mixed_outside_cash_per_trial_year": mixed_outside_cash,
         # Per-year breakdown arrays — shape (trials, horizon_years)
+        # Vacancy weeks drawn per trial-year (floored at 0). Analytical output: lets callers
+        # verify the yield↔vacancy coupling (RHO_YIELD_VACANCY) without re-deriving the draw.
+        "vacancy_paths": vacancy_paths,
         "property_value_path": p_value_path,
         "property_loan_balance_path": p_loan_balance_path,
         "property_rent_path": p_rent_path,

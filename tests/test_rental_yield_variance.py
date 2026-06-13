@@ -117,78 +117,42 @@ def test_variance_bound_sigma_0005():
 
 
 # ---------------------------------------------------------------------------
-# Test 4 — Vacancy correlation sign
-# In high-vacancy trial-years, the effective rent per unit value should be lower.
-# We extract occupancy fraction and effective yield from the rent path.
-# Assertion: mean rent/value in high-vacancy tercile < mean rent/value in low-vacancy tercile.
+# Test 4 — Vacancy correlation sign (the design intent: RHO_YIELD_VACANCY = -0.5)
+# The rent-level yield deviation shares the vacancy standard-normal draw with a
+# negative loading, so higher vacancy ↔ lower yield. We isolate the yield signal by
+# dividing the sigma>0 rent path by the sigma=0 rent path: with the same seed the
+# property value path AND occupied weeks are identical across the two runs, so they
+# cancel in the ratio, leaving yield_path / gross_yield. That ratio must be NEGATIVELY
+# correlated with the per-trial-year vacancy_paths output.
 # ---------------------------------------------------------------------------
 def test_yield_negatively_correlated_with_vacancy():
-    """High-vacancy trial-years should correspond to lower effective yield (rent/value)."""
+    """Rent-level yield ratio (rent_sigma>0 / rent_sigma=0) must be negatively correlated
+    with vacancy — the RHO_YIELD_VACANCY = -0.5 design intent, asserted not inspected."""
     from model.monte_carlo import run_monte_carlo
 
-    run = run_monte_carlo(
+    run_sigma1 = run_monte_carlo(
         trials=_STAT_TRIALS, horizon_years=_STAT_HORIZON,
         **{**_BASE_KWARGS, "rental_yield_sigma": 0.005},
     )
-
-    rent = run["property_rent_path"]          # (trials, horizon)
-    value = run["property_value_path"]        # (trials, horizon)
-    vacancy = run["outside_cash_per_trial_year"]  # proxy not suitable — use rent path directly
-
-    # Use the occupancy factor: effective_yield ≈ rent / value.
-    # This captures both vacancy and yield variation together.
-    # We can separate: rent = eff_yield * sov * occupied_weeks / 52
-    # But we don't have sov/vacancy_path as a direct output — so use the rent/value ratio
-    # as a combined signal and check that the distribution is dispersed more than sigma=0.
-    # For the correlation test, we use rent_path variation as the yield proxy.
-    # rent_path = eff_yield * start_of_year_value * occupied_weeks / 52
-    # If we divide by property value (as proxy for start_of_year_value), we get approx
-    # effective_yield * occupied_weeks / 52 — which should be negatively correlated with
-    # the underlying vacancy.
-
-    # Since we don't expose vacancy_paths directly, we test the weaker property:
-    # the correlation between rent (trial×year flat) and the rent from a sigma=0 run
-    # (which is purely vacancy-driven) should be positive but <1, and the
-    # rent_sigma - rent_0 residuals should be near-uncorrelated with vacancy at sigma=0.
-    # Simplest testable form: with sigma>0, the cross-trial variance of (rent1 - rent0) > 0
-    # AND the mean of (rent1 - rent0) is close to 0 (symmetric drift).
-
     run_sigma0 = run_monte_carlo(
         trials=_STAT_TRIALS, horizon_years=_STAT_HORIZON,
         **{**_BASE_KWARGS, "rental_yield_sigma": 0.0},
     )
-    rent0 = run_sigma0["property_rent_path"]   # sigma=0 rent (vacancy-only variation)
-    rent1 = run["property_rent_path"]           # sigma>0 rent
 
-    # The yield deviation is correlated with vacancy_z (-0.5 correlation by design).
-    # Vacancy is already in rent0 (lower rent when more vacancy).
-    # Yield dev adds more variation that is correlated (negatively) with vacancy.
-    # Testable: the correlation between rent1 and rent0 across all trial-years should
-    # be positive and high (most of the signal is shared), but rent1 has extra spread.
+    rent1 = run_sigma1["property_rent_path"]   # (trials, horizon) — yield_path drives rent
+    rent0 = run_sigma0["property_rent_path"]   # (trials, horizon) — scalar gross_yield
+    vacancy = run_sigma1["vacancy_paths"]      # (trials, horizon) — same draw in both runs
 
-    # Flatten to (trials * horizon_years,)
-    r0_flat = rent0.ravel()
-    r1_flat = rent1.ravel()
+    # Same seed → identical value path & occupied weeks; both cancel in the ratio, leaving
+    # rent1 / rent0 == yield_path / gross_yield. Mask any zero-rent trial-year defensively.
+    mask = rent0 > 0
+    yield_ratio = rent1[mask] / rent0[mask]
+    vac = vacancy[mask]
 
-    corr = np.corrcoef(r0_flat, r1_flat)[0, 1]
-    assert corr > 0.90, (
-        f"rent_sigma>0 should be highly positively correlated with rent_sigma=0 "
-        f"(both see same vacancy), got corrcoef={corr:.4f}"
-    )
-
-    # The extra spread from yield deviation: rent1 - rent0 should have non-trivial std.
-    diff = r1_flat - r0_flat
-    diff_std = np.std(diff)
-    r0_std = np.std(r0_flat)
-    assert diff_std > 0.01 * r0_std, (
-        f"rent difference (yield drift) has negligible std={diff_std:.2f} vs base std={r0_std:.2f}"
-    )
-
-    # Sign check: the mean of (rent1 - rent0) should be near 0 (symmetric, zero-mean AR(1)).
-    # The AR(1) is zero-mean by construction (drift is added to gross_yield, not multiplied).
-    mean_diff = np.mean(diff)
-    assert abs(mean_diff) < 0.05 * r0_std, (
-        f"Mean rent difference should be near zero (zero-mean AR(1)), got {mean_diff:.2f}"
+    corr = np.corrcoef(yield_ratio.ravel(), vac.ravel())[0, 1]
+    assert corr < 0, (
+        f"yield ratio (rent_sigma>0 / rent_sigma=0) must be negatively correlated with "
+        f"vacancy (RHO_YIELD_VACANCY=-0.5), got corrcoef={corr:.4f}"
     )
 
 
