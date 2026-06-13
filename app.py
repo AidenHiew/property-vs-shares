@@ -403,6 +403,22 @@ def cached_run(**kwargs):
     return run_monte_carlo(**kwargs)
 
 
+def _build_scenario_curve(run_kwargs: dict, max_top_up: float) -> list:
+    """Derive a mix curve from run_kwargs using the same cached base run.
+
+    Reuses cached_run (cache hit when params match the current scenario).
+    Always runs at property_share_mix=1.0 to get unblended arrays.
+    Returns list[MixPoint].
+    """
+    result = cached_run(trials=5000, property_share_mix=1.0, **run_kwargs)
+    return build_mix_curve(
+        p_terminal=result["property_terminal_wealth"],
+        s_terminal=result["shares_terminal_wealth"],
+        p_outside_cash=result["outside_cash_per_trial_year"],
+        ceiling=max_top_up,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Base run (one simulation; no per-mix re-runs) + input-hash auto-recompute
 # ---------------------------------------------------------------------------
