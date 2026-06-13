@@ -10,3 +10,4 @@ notebooks/*-output.ipynb
 notebooks/*.html
 notebooks/*.png
 .streamlit/secrets.toml
+.superpowers/
