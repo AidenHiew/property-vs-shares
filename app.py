@@ -19,7 +19,7 @@ from config import STAGE_3_BRACKETS
 from ui.common import (GREEN, TEAL, AMBER, RED, AMBER_DK, INK, MUTED, FAINT, LINE,
                        GLOBAL_CSS, _render_html, _fmt_money, _fmt_dollars, _fmt_pct)
 from model.mix_curve import build_mix_curve
-from ui.persona import (find_optimal_mix, render_persona_cards, render_comparison_table)
+from ui.persona import find_optimal_mix, render_persona_cards
 from ui.onboarding import render_hero, render_limitations, render_full_guide
 from model.solvency import flag_forced_sales
 from ui.frontier import render_dot_grid, render_downside_callout, render_failure_taxonomy, render_frontier_expander
@@ -343,6 +343,12 @@ if errors:
 # None, which must never reach the URL (str(None) == "None" is not a valid option and
 # would crash the segmented_control default on the next load).
 VALID_PERSONAS = ("Safe · 99%+", "Balanced · 95%+", "Growth-focused · 85%+", "Custom")
+# Fix 3: Consume any pending persona override from the previous rerun (set below after the
+# frontier expander).  Must happen BEFORE the segmented_control widget is instantiated so
+# session_state["persona_pick"] can be written without raising StreamlitAPIException.
+if st.session_state.get("_pending_persona") == "Custom":
+    st.session_state["persona_pick"] = "Custom"
+    del st.session_state["_pending_persona"]
 _persona_qp = st.session_state.get("persona_pick") if "persona_pick" in st.session_state else qp("persona", str, "Balanced · 95%+")
 if _persona_qp not in VALID_PERSONAS:
     _persona_qp = "Balanced · 95%+"
@@ -568,7 +574,11 @@ if deflate:
               "median_shares_wealth", "mixed_terminal_wealth", "median_mixed_wealth"]:
         result[k] = result[k] / term_deflator
     per_year_keys = [
-        "outside_cash_per_trial_year", "mixed_outside_cash_per_trial_year",
+        # NOTE: outside_cash_per_trial_year and mixed_outside_cash_per_trial_year
+        # are intentionally excluded from deflation here.  The cashflow-stress chart
+        # plots these cash arrays against the nominal max_top_up ceiling line; keeping
+        # both on the same nominal basis avoids a mismatch.  The safety flag and
+        # callout also need nominal cash figures.
         "property_wealth_path", "shares_wealth_path", "mixed_wealth_path",
         "property_value_path", "property_loan_balance_path", "property_rent_path",
         "property_interest_path", "property_other_costs_path", "property_depreciation_path",
@@ -578,9 +588,10 @@ if deflate:
     ]
     for k in per_year_keys:
         result[k] = result[k] / yearly_deflator
-    result["worst_year_cash"] = float(
-        np.percentile(result["mixed_outside_cash_per_trial_year"].max(axis=1), 90)
-    ) if breakdown_mix > 0.0 else 0.0
+    # NOTE: worst_year_cash is intentionally NOT deflated here.
+    # It is a cash-safety figure kept in nominal (future) dollars so the flag
+    # can compare it against the nominal max_top_up ceiling consistently.
+    # Deflating it would make the scenario look safer than it actually is.
 
 # ---------------------------------------------------------------------------
 # RENDER SECTION — spec §4 hierarchy order
@@ -671,6 +682,11 @@ _render_html(
     f'<span class="flag-emoji">{"✅" if flag[0]=="ok" else "⚠️" if flag[0]=="warn" else "❌"}'
     f'</span> {flag[1]}</div>'
 )
+if deflate:
+    st.caption(
+        "Cash figures above (worst year, ceiling) are in future (nominal) dollars — "
+        "not deflated like the wealth numbers."
+    )
 
 # 3. Headline — dot grid + natural-frequency phrasing + pvs-section-sub context line
 n = result["property_terminal_wealth"].size
@@ -753,15 +769,29 @@ _new_dial, _new_free_mix = render_frontier_expander(
     max_top_up=max_top_up,
 )
 
-# Write back URL params for dial and free_mix (clamped)
+# Write back URL params for dial and free_mix (clamped).
+# IMPORTANT: capture the prior free_mix value BEFORE writing to query_params so
+# the change-detection below compares new vs. old (not new vs. new).
+# free_mix_pct here is the value read from URL at startup (line ~356); it hasn't
+# changed yet, so it correctly represents the prior run's value.
+_prior_free_mix = free_mix_pct
 dial_safety_pct = max(50, min(99, _new_dial))
 free_mix_pct = max(0, min(100, _new_free_mix))
 st.query_params["dial_safety"] = str(dial_safety_pct)
 st.query_params["free_mix"] = str(free_mix_pct)
 
-# If user moved the free-mix slider, switch persona_pick to "Custom"
-if _new_free_mix != qp("free_mix", int, 50):
-    st.session_state["persona_pick"] = "Custom"
+# If user moved the free-mix slider (new value differs from prior), flip to "Custom".
+# Comparing _new_free_mix against _prior_free_mix (not qp("free_mix") which now
+# reads the just-written value and would always equal _new_free_mix → never flips).
+#
+# We cannot write st.session_state["persona_pick"] directly here — the segmented_control
+# widget with key "persona_pick" has already been instantiated above (line ~734), and
+# Streamlit raises StreamlitAPIException if you modify its session state after render.
+# Instead, write to a pending-override key that is consumed at the TOP of the NEXT rerun,
+# before the widget is instantiated, and triggers a second rerun so the UI reflects the flip.
+if _new_free_mix != _prior_free_mix:
+    st.session_state["_pending_persona"] = "Custom"
+    st.rerun()
 
 # ---------------------------------------------------------------------------
 # Detail expanders
@@ -809,6 +839,11 @@ with st.expander("🎲 Range of outcomes & cashflow stress"):
                       height=360, margin=dict(t=50), hovermode="x unified")
     fig2.update_xaxes(gridcolor="#f0f0f0"); fig2.update_yaxes(gridcolor="#f0f0f0")
     st.plotly_chart(fig2, width="stretch")
+    if deflate:
+        st.caption(
+            "Cash figures and ceiling above are in future (nominal) dollars — "
+            "consistent with each other and with the viability flag."
+        )
 
 render_full_guide()
 

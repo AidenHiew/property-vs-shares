@@ -192,7 +192,7 @@ def render_ab_frontier(
     )
     fig.update_xaxes(gridcolor="#f0f0f0", tickformat="$,.0f")
     fig.update_yaxes(gridcolor="#f0f0f0", ticksuffix="%")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 # ---------------------------------------------------------------------------
@@ -248,7 +248,7 @@ def render_ab_stacked_fallback(
         )
         fig.update_xaxes(gridcolor="#f0f0f0", tickformat="$,.0f")
         fig.update_yaxes(gridcolor="#f0f0f0", ticksuffix="%")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     _mini_chart(a_curve, a_label, a_horizon, "solid")
     _mini_chart(b_curve, b_label, b_horizon, "dash")
@@ -317,7 +317,7 @@ def render_ab_tabs_fallback(
         )
         fig.update_xaxes(gridcolor="#f0f0f0", tickformat="$,.0f")
         fig.update_yaxes(gridcolor="#f0f0f0", ticksuffix="%")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     with tab_a:
         _tab_content(a_curve, a_label, "solid")

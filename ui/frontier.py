@@ -91,12 +91,15 @@ def render_downside_callout(
     mixed_terminal   : (trials,) array of mixed terminal wealth.
     s_terminal       : (trials,) array of pure-shares terminal wealth.
     ceiling          : serviceability ceiling in $ (same as max_top_up, pre-deflation).
-    deflate          : if True, amounts are already deflated — label as today's $.
+    deflate          : retained for API compatibility; figures are always nominal (future $).
     """
     if breakdown_mix == 0.0:
         return  # pure shares: no cash demand, callout not applicable
 
-    dollar_label = "today's $" if deflate else "future $"
+    # Both worst_year_cash and total_top_ups are always nominal (future $) regardless
+    # of display_mode — they come from pre-deflation arrays and are compared against
+    # the nominal max_top_up ceiling.  Label them consistently as "future $".
+    dollar_label = "future $"
     z_pct = int(round(forced_sale_rate * 100))
 
     html = f"""
@@ -204,8 +207,9 @@ def render_frontier_expander(
     Returns (new_dial_safety_pct, new_free_mix_pct) so app.py can write them
     to URL params and session state.
 
-    Snap rule: solvency % interpolates linearly between the 21 points for the
-    dial readout; dollar/rate fields snap to the nearest computed mix point.
+    Snap rule: the dial readout finds the highest-wealth qualifying mix point
+    at or above the safety threshold (snap-to-qualifying-point, not linear
+    interpolation); dollar/rate fields snap to that same qualifying point.
     """
     from ui.persona import find_optimal_mix, PERSONA_DEFS, render_comparison_table
 
@@ -342,7 +346,7 @@ def render_frontier_expander(
         )
         fig.update_xaxes(gridcolor="#f0f0f0", tickformat="$,.0f")
         fig.update_yaxes(gridcolor="#f0f0f0", ticksuffix="%")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
         # --- Safety-target dial ---
         st.markdown(
