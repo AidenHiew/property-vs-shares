@@ -17,8 +17,8 @@ from model.normalisation import PORTFOLIO_PROFILES
 from config import STAGE_3_BRACKETS
 from ui.common import (GREEN, TEAL, AMBER, RED, AMBER_DK, INK, MUTED, FAINT, LINE,
                        GLOBAL_CSS, _render_html, _fmt_money, _fmt_dollars, _fmt_pct)
-from ui.persona import (compute_persona_sweep, find_optimal_mix,
-                        render_persona_cards, render_comparison_table)
+from model.mix_curve import build_mix_curve, MixPoint
+from ui.persona import (find_optimal_mix, render_persona_cards, render_comparison_table)
 from ui.onboarding import render_hero, render_limitations, render_full_guide
 
 
@@ -59,6 +59,17 @@ def qp(key, cast, default):
         return cast(raw)
     except (ValueError, TypeError):
         return default
+
+
+import hashlib, json as _json
+
+
+def _input_hash(kwargs: dict) -> str:
+    """Stable hash of run_monte_carlo kwargs for change-detection.
+    Uses json.dumps with sort_keys so dict ordering doesn't affect the hash."""
+    return hashlib.md5(
+        _json.dumps(kwargs, sort_keys=True, default=str).encode()
+    ).hexdigest()
 
 
 # ============================================================================
@@ -329,6 +340,15 @@ VALID_PERSONAS = ("Safe", "Balanced", "Wealth Maximizer", "Custom")
 _persona_qp = st.session_state.get("persona_pick") if "persona_pick" in st.session_state else qp("persona", str, "Balanced")
 if _persona_qp not in VALID_PERSONAS:
     _persona_qp = "Balanced"
+# --- New URL-persisted allocation controls (clamped on read AND write) ---
+# dial_safety: integer percent in [50, 99]; default 95.
+_dial_raw = qp("dial_safety", int, 95)
+dial_safety_pct = max(50, min(99, _dial_raw))  # clamp on read
+
+# free_mix: integer percent of property in [0, 100]; default 50.
+_free_mix_raw = qp("free_mix", int, 50)
+free_mix_pct = max(0, min(100, _free_mix_raw))  # clamp on read
+
 st.query_params.update({k: str(v) for k, v in {
     "price": purchase_price, "dep": deposit_pct, "yield": round(gross_yield * 100, 1),
     "age": ["new_build", "established_post_2017", "established_pre_2017"].index(property_age),
@@ -340,6 +360,8 @@ st.query_params.update({k: str(v) for k, v in {
     "port": ["asx_only", "global", "blended"].index(portfolio_profile),
     "regime": ["current", "restricted_2027"].index(property_regime),
     "state": state,
+    "dial_safety": max(50, min(99, dial_safety_pct)),
+    "free_mix": max(0, min(100, free_mix_pct)),
 }.items()})
 
 # Stamp duty + buying costs
@@ -377,37 +399,52 @@ def cached_run(**kwargs):
 
 
 # ---------------------------------------------------------------------------
-# Recommendation (perf: sweep runs only on demand, not every slider drag)
+# Recommendation (auto-recompute: one base run + post-hoc mix curve)
 # ---------------------------------------------------------------------------
-sweep_kwargs = dict(run_kwargs)  # already carries serviceability_ceiling
-sweep_key = json.dumps(sweep_kwargs, sort_keys=True, default=str)
-
 st.markdown('<div class="pvs-section">Recommended allocation for you</div>', unsafe_allow_html=True)
 st.markdown('<div class="pvs-section-sub">Pick the safety level that matches your comfort with risk — '
             'the optimiser finds the property/shares mix that delivers it with the most wealth.</div>',
             unsafe_allow_html=True)
 
-stale = st.session_state.get("sweep_key") != sweep_key
-c1, c2 = st.columns([1, 3])
-with c1:
-    recompute = st.button("↻ Update recommendations", type="primary" if stale else "secondary",
-                          width="stretch")
-if recompute or "sweep_rows" not in st.session_state:
-    st.session_state["sweep_rows"] = compute_persona_sweep(**sweep_kwargs)
-    st.session_state["sweep_key"] = sweep_key
-    stale = False
-with c2:
-    if stale:
-        st.info("Inputs changed — click **↻ Update recommendations** to refresh the cards below.")
-sweep_rows = st.session_state["sweep_rows"]
+# ---------------------------------------------------------------------------
+# Base run (one simulation; no per-mix re-runs) + input-hash auto-recompute
+# ---------------------------------------------------------------------------
+# Hash the full run_kwargs to detect input changes.
+_current_hash = _input_hash({**run_kwargs, "trials": 5000})
 
-render_persona_cards(sweep_rows, horizon)
-balanced = find_optimal_mix(sweep_rows, 0.95)
+_stale = st.session_state.get("_run_hash") != _current_hash
+_prior_result = st.session_state.get("_base_result")
+
+if _stale or _prior_result is None:
+    # Input changed (or first load): recompute. Show spinner; dim prior result via CSS.
+    with st.spinner("Running 5,000 simulated futures…"):
+        try:
+            _new_result = cached_run(trials=5000, property_share_mix=1.0, **run_kwargs)
+            st.session_state["_base_result"] = _new_result
+            st.session_state["_run_hash"] = _current_hash
+            _stale = False
+        except Exception as _e:
+            st.error(
+                "Something went wrong — try a shorter horizon or smaller deposit. "
+                f"(Detail: {_e})"
+            )
+            st.stop()
+
+base_result = st.session_state["_base_result"]
+
+# Build the mix curve from the base run (sub-second; pure NumPy post-processing).
+mix_curve = build_mix_curve(
+    p_terminal=base_result["property_terminal_wealth"],
+    s_terminal=base_result["shares_terminal_wealth"],
+    p_outside_cash=base_result["outside_cash_per_trial_year"],
+    ceiling=max_top_up,
+)
+
+render_persona_cards(mix_curve, horizon)
+balanced = find_optimal_mix(mix_curve, 0.95)
 PERSONA_TO_THRESHOLD = {"Safe": 0.99, "Balanced": 0.95, "Wealth Maximizer": 0.85}
 options = ["Safe", "Balanced", "Wealth Maximizer", "Custom"]
-label_map = {k: (k + " ★" if k == "Balanced" and not stale else k) for k in options}
-if stale:
-    st.caption("Recommendations are stale — click ↻ Update recommendations.")
+label_map = {k: (k + " ★" if k == "Balanced" else k) for k in options}
 _persona_default = qp("persona", str, "Balanced")
 if _persona_default not in options:  # guard stale/invalid URL values (e.g. "None")
     _persona_default = "Balanced"
@@ -420,13 +457,37 @@ if picked is None:
 if picked == "Custom":
     breakdown_mix_pct = property_share_mix_pct
 else:
-    _row = find_optimal_mix(sweep_rows, PERSONA_TO_THRESHOLD[picked])
-    breakdown_mix_pct = _row["mix_pct"] if _row else (balanced["mix_pct"] if balanced else 50)
+    _row = find_optimal_mix(mix_curve, PERSONA_TO_THRESHOLD[picked])
+    breakdown_mix_pct = int(round(_row.mix_pct * 100)) if _row else (int(round(balanced.mix_pct * 100)) if balanced else 50)
 recommended_mix = breakdown_mix_pct
 
-# Run simulation for the selected breakdown mix
+# Derive per-render mixed arrays from base_result (no second simulation).
+# All mix-specific arrays are computed post-hoc from the base run's unblended paths.
 breakdown_mix = breakdown_mix_pct / 100
-result = cached_run(trials=5000, property_share_mix=breakdown_mix, **run_kwargs)
+result = dict(base_result)  # shallow copy so we can add mix-specific keys
+result["mixed_terminal_wealth"] = (
+    breakdown_mix * base_result["property_terminal_wealth"]
+    + (1.0 - breakdown_mix) * base_result["shares_terminal_wealth"]
+)
+result["median_mixed_wealth"] = float(np.median(result["mixed_terminal_wealth"]))
+result["mixed_outside_cash_per_trial_year"] = (
+    breakdown_mix * base_result["outside_cash_per_trial_year"]
+)
+from model.solvency import flag_forced_sales as _ffs
+_mixed_flags = _ffs(result["mixed_outside_cash_per_trial_year"], max_top_up)
+result["p_mix_solvent"] = float(1.0 - _mixed_flags.mean())
+result["p_mix_beats_pure_shares"] = float(
+    ((result["mixed_terminal_wealth"] > base_result["shares_terminal_wealth"])
+     & ~_mixed_flags).mean()
+)
+result["mixed_wealth_path"] = (
+    breakdown_mix * base_result["property_wealth_path"]
+    + (1.0 - breakdown_mix) * base_result["shares_wealth_path"]
+)
+# worst_year_cash for feasibility flag: use mix-scaled outside cash (spec §5.3 fix)
+result["worst_year_cash"] = float(
+    np.percentile(result["mixed_outside_cash_per_trial_year"].max(axis=1), 90)
+) if breakdown_mix > 0.0 else 0.0
 
 # Deflation to today's dollars
 deflate = display_mode == "today"
@@ -447,7 +508,9 @@ if deflate:
     ]
     for k in per_year_keys:
         result[k] = result[k] / yearly_deflator
-    result["worst_year_cash"] = float(np.percentile(result["outside_cash_per_trial_year"].max(axis=1), 90))
+    result["worst_year_cash"] = float(
+        np.percentile(result["mixed_outside_cash_per_trial_year"].max(axis=1), 90)
+    ) if breakdown_mix > 0.0 else 0.0
 
 # "What now?" guidance
 _render_html(f"""
@@ -513,7 +576,7 @@ with st.expander("📈 Year-by-year breakdown (chart + table)"):
     render_shares_year_table(result, horizon, breakdown_mix_pct, deflate, yearly_deflator)
 
 with st.expander("⚖️ Compare all property/shares mixes"):
-    render_comparison_table(sweep_rows, recommended_mix)
+    render_comparison_table(mix_curve, breakdown_mix_pct)
 
 with st.expander("🎲 Range of outcomes & cashflow stress"):
     fig = go.Figure()

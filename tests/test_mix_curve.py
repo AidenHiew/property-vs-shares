@@ -443,3 +443,133 @@ def test_comparison_mode_realistic_vs_fair_fight_produce_different_curves():
     assert mid_real != pytest.approx(mid_fair, rel=0.001), (
         "Expected realistic and fair_fight modes to produce different curves"
     )
+
+
+# ---------------------------------------------------------------------------
+# Task 2a — persona.py: find_optimal_mix + render_persona_cards with MixPoint
+# ---------------------------------------------------------------------------
+def test_find_optimal_mix_returns_none_when_no_mix_qualifies():
+    """find_optimal_mix returns None when no MixPoint meets min_p_solvent."""
+    from ui.persona import find_optimal_mix
+    from model.mix_curve import MixPoint
+
+    low_curve = [
+        MixPoint(mix_pct=0.0, median_mixed_wealth=500_000, p_solvent=0.50,
+                 p_succeeds=0.40, p_mix_beats_pure_shares=0.40,
+                 worst_year_cash=0.0, total_top_ups=0.0, forced_sale_rate=0.50),
+        MixPoint(mix_pct=0.5, median_mixed_wealth=800_000, p_solvent=0.80,
+                 p_succeeds=0.65, p_mix_beats_pure_shares=0.65,
+                 worst_year_cash=12_000, total_top_ups=60_000, forced_sale_rate=0.20),
+    ]
+    result = find_optimal_mix(low_curve, min_p_solvent=0.99)
+    assert result is None
+
+
+def test_find_optimal_mix_returns_highest_wealth_qualifying_mix():
+    """find_optimal_mix returns the MixPoint with highest median_mixed_wealth at/above threshold."""
+    from ui.persona import find_optimal_mix
+    from model.mix_curve import MixPoint
+
+    curve = [
+        MixPoint(mix_pct=0.0, median_mixed_wealth=900_000, p_solvent=0.98,
+                 p_succeeds=0.75, p_mix_beats_pure_shares=0.75,
+                 worst_year_cash=0.0, total_top_ups=0.0, forced_sale_rate=0.02),
+        MixPoint(mix_pct=0.5, median_mixed_wealth=1_100_000, p_solvent=0.96,
+                 p_succeeds=0.80, p_mix_beats_pure_shares=0.80,
+                 worst_year_cash=8_000, total_top_ups=40_000, forced_sale_rate=0.04),
+        MixPoint(mix_pct=1.0, median_mixed_wealth=1_050_000, p_solvent=0.91,
+                 p_succeeds=0.78, p_mix_beats_pure_shares=0.78,
+                 worst_year_cash=18_000, total_top_ups=95_000, forced_sale_rate=0.09),
+    ]
+    # At threshold 0.95: both 0.0 and 0.5 qualify; 0.5 has higher wealth
+    result = find_optimal_mix(curve, min_p_solvent=0.95)
+    assert result is not None
+    assert result.mix_pct == pytest.approx(0.5)
+
+
+def test_find_optimal_mix_all_three_thresholds_none_handled():
+    """Simulate all-None scenario: no mix meets 0.99, 0.95, or 0.85 thresholds."""
+    from ui.persona import find_optimal_mix
+    from model.mix_curve import MixPoint
+
+    very_bad = [
+        MixPoint(mix_pct=m / 20, median_mixed_wealth=500_000, p_solvent=0.70,
+                 p_succeeds=0.50, p_mix_beats_pure_shares=0.50,
+                 worst_year_cash=50_000, total_top_ups=300_000, forced_sale_rate=0.30)
+        for m in range(21)
+    ]
+    for threshold in (0.99, 0.95, 0.85):
+        assert find_optimal_mix(very_bad, min_p_solvent=threshold) is None, (
+            f"Expected None at threshold {threshold}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Task 2b — app.py: state machine, URL param clamping, no-solvent-mix, error state
+# These tests use Streamlit's AppTest harness (same pattern as test_persona_control.py).
+# ---------------------------------------------------------------------------
+
+def test_dial_safety_invalid_url_param_clamps_to_95():
+    """dial_safety=999 in URL must clamp to 95 (valid default) and not crash."""
+    from streamlit.testing.v1 import AppTest
+    at = AppTest.from_file("app.py", default_timeout=90)
+    at.query_params["dial_safety"] = "999"
+    at.run()
+    assert not at.exception, f"App crashed on dial_safety=999: {at.exception}"
+    # The URL must be rewritten to a value in [50, 99]
+    written = at.query_params.get("dial_safety")
+    if written is not None:
+        if isinstance(written, list):
+            written = written[0]
+        assert 50 <= int(written) <= 99, f"dial_safety not clamped: {written}"
+
+
+def test_dial_safety_negative_url_param_clamps():
+    """dial_safety=-10 in URL must clamp to 50 (minimum) and not crash."""
+    from streamlit.testing.v1 import AppTest
+    at = AppTest.from_file("app.py", default_timeout=90)
+    at.query_params["dial_safety"] = "-10"
+    at.run()
+    assert not at.exception, f"App crashed on dial_safety=-10: {at.exception}"
+
+
+def test_free_mix_invalid_url_param_clamps():
+    """free_mix=150 in URL must clamp to 100 and not crash."""
+    from streamlit.testing.v1 import AppTest
+    at = AppTest.from_file("app.py", default_timeout=90)
+    at.query_params["free_mix"] = "150"
+    at.run()
+    assert not at.exception, f"App crashed on free_mix=150: {at.exception}"
+    written = at.query_params.get("free_mix")
+    if written is not None:
+        if isinstance(written, list):
+            written = written[0]
+        assert 0 <= int(written) <= 100, f"free_mix not clamped: {written}"
+
+
+def test_free_mix_negative_url_param_clamps():
+    """free_mix=-5 in URL must clamp to 0 and not crash."""
+    from streamlit.testing.v1 import AppTest
+    at = AppTest.from_file("app.py", default_timeout=90)
+    at.query_params["free_mix"] = "-5"
+    at.run()
+    assert not at.exception, f"App crashed on free_mix=-5: {at.exception}"
+
+
+def test_app_runs_without_exception_default_params():
+    """App must load and render with default params (no sweep button needed)."""
+    from streamlit.testing.v1 import AppTest
+    at = AppTest.from_file("app.py", default_timeout=90)
+    at.run()
+    assert not at.exception, f"App crashed on default load: {at.exception}"
+
+
+def test_no_sweep_button_present():
+    """The ↻ Update recommendations button must no longer exist."""
+    from streamlit.testing.v1 import AppTest
+    at = AppTest.from_file("app.py", default_timeout=90)
+    at.run()
+    button_labels = [b.label for b in at.button]
+    assert not any("Update recommendations" in (lbl or "") for lbl in button_labels), (
+        f"Found ↻ button that should have been removed: {button_labels}"
+    )
