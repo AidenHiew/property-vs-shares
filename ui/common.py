@@ -27,15 +27,15 @@ GLOBAL_CSS = f"""
   .badge {{ background: {GREEN}; color: #fff; font-size: 11px; font-weight: 700; letter-spacing: .3px;
             padding: 4px 10px; border-radius: 999px; display: inline-block; margin-bottom: 12px; }}
   .pname {{ font-size: 12px; font-weight: 700; color: {MUTED}; text-transform: uppercase; letter-spacing: .6px; }}
-  .pthr {{ font-size: 11px; color: {FAINT}; margin: 2px 0 14px; font-weight: 600; }}
+  .pthr {{ font-size: 14px; color: {MUTED}; margin: 2px 0 14px; font-weight: 600; }}
   .alloc {{ font-size: 30px; font-weight: 800; color: {INK}; line-height: 1.05; }}
   .card.rec .alloc {{ color: {GREEN}; }}
   .alloc-sub {{ font-size: 13px; color: {MUTED}; margin-top: 2px; }}
   .hr {{ height: 1px; background: {LINE}; margin: 15px 0; }}
   .mrow {{ margin-bottom: 9px; }}
-  .mlabel {{ font-size: 12px; color: {FAINT}; margin-bottom: 1px; }}
+  .mlabel {{ font-size: 14px; color: {MUTED}; margin-bottom: 1px; }}
   .mval {{ font-size: 17px; font-weight: 700; color: {INK}; }}
-  .blurb {{ font-size: 12px; color: #4b5563; font-style: italic; background: #f9fafb;
+  .blurb {{ font-size: 14px; color: #4b5563; font-style: italic; background: #f9fafb;
             border-radius: 8px; padding: 11px 12px; margin: 10px 0 0; }}
 
   /* metric tiles */
@@ -55,6 +55,7 @@ GLOBAL_CSS = f"""
   .flag.ok  {{ background: rgba(22,163,74,.08);  border: 1px solid rgba(22,163,74,.4);  color: #166534; }}
   .flag.warn{{ background: rgba(245,158,11,.10); border: 1px solid rgba(245,158,11,.5); color: #92400e; }}
   .flag.bad {{ background: rgba(239,68,68,.08);  border: 1px solid rgba(239,68,68,.45); color: #991b1b; }}
+  .flag-emoji {{ font-size: 18px; line-height: 1; }}
 
   /* tables */
   .tbl-wrap {{ overflow-x: auto; }}

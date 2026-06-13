@@ -91,6 +91,7 @@ def render_year_by_year_chart(result, horizon, mix_pct, deflate, yearly_deflator
     if mix_pct < 100:
         series.append((f"Mix ({mix_pct}/{100-mix_pct})", "mixed_wealth_path", GREEN))
 
+    DASH_STYLES = {AMBER: "solid", TEAL: "dash", GREEN: "dot"}
     fig = go.Figure()
     for label, key, colour in series:
         arr = result[key] / yearly_deflator if deflate else result[key]
@@ -103,7 +104,7 @@ def render_year_by_year_chart(result, horizon, mix_pct, deflate, yearly_deflator
                       fill="toself", fillcolor=f"rgba({rgba},.16)", line=dict(width=0),
                       hoverinfo="skip", showlegend=False))
         fig.add_trace(go.Scatter(x=years, y=p50, mode="lines", name=label,
-                      line=dict(color=colour, width=2.5),
+                      line=dict(color=colour, width=2.5, dash=DASH_STYLES[colour]),
                       hovertemplate=f"{label}: %{{y:$,.0f}} (yr %{{x}})<extra></extra>"))
     fig.add_vline(x=5, line_dash="dot", line_color=MUTED,
                   annotation_text="loan starts repaying principal", annotation_font_size=10)
