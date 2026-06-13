@@ -71,7 +71,7 @@ def base_run_5000():
 def test_mix_point_has_required_fields():
     from model.mix_curve import MixPoint
     mp = MixPoint(
-        mix_pct=50,
+        mix_pct=0.5,  # float fraction in [0,1], not an int percent
         median_mixed_wealth=1_000_000.0,
         p_solvent=0.95,
         p_succeeds=0.70,
@@ -80,7 +80,7 @@ def test_mix_point_has_required_fields():
         total_top_ups=80_000.0,
         forced_sale_rate=0.05,
     )
-    assert mp.mix_pct == 50
+    assert mp.mix_pct == pytest.approx(0.5)
     assert mp.p_solvent == pytest.approx(0.95)
 
 
