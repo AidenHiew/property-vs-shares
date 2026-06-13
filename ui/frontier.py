@@ -1,5 +1,6 @@
 # ui/frontier.py
-"""Phase 2 UI components: dot-grid headline, downside callout, failure taxonomy.
+"""Phase 2 UI components: dot-grid headline, downside callout, failure taxonomy,
+frontier expander.
 
 No Streamlit state writes from this module — all state (dial_safety_pct,
 free_mix_pct, persona_pick) is read/written in app.py; these functions are
@@ -7,8 +8,10 @@ pure renderers.
 """
 from __future__ import annotations
 import numpy as np
+import plotly.graph_objects as go
 import streamlit as st
 
+from model.mix_curve import MixPoint
 from model.solvency import flag_forced_sales
 from ui.common import (
     GREEN, TEAL, AMBER, RED, AMBER_DK, INK, MUTED, FAINT, LINE,
@@ -179,3 +182,223 @@ def render_failure_taxonomy(
 </p>
 </div>"""
     _render_html(GLOBAL_CSS + html)
+
+
+def render_frontier_expander(
+    mix_curve: list[MixPoint],
+    horizon: int,
+    breakdown_mix_pct: int,
+    dial_safety_pct: int,
+    free_mix_pct: int,
+    max_top_up: float,
+) -> tuple[int, int]:
+    """Render the 'How much safety does each mix buy?' expander.
+
+    Contains:
+    - Plotly frontier chart (x=median wealth, y=solvency chance)
+    - Safety-target dial (st.slider, key='dial_safety_slider')
+    - Free % property slider (key='free_mix_slider')
+    - Optional 'Show as table' toggle (accessibility fallback)
+    - Linear-blend model-assumption caveat
+
+    Returns (new_dial_safety_pct, new_free_mix_pct) so app.py can write them
+    to URL params and session state.
+
+    Snap rule: solvency % interpolates linearly between the 21 points for the
+    dial readout; dollar/rate fields snap to the nearest computed mix point.
+    """
+    from ui.persona import find_optimal_mix, PERSONA_DEFS, render_comparison_table
+
+    with st.expander("How much safety does each mix buy?"):
+        # --- Frontier chart ---
+        mixes_pct = [int(round(pt.mix_pct * 100)) for pt in mix_curve]
+        wealth = [pt.median_mixed_wealth for pt in mix_curve]
+        solvency = [pt.p_solvent * 100 for pt in mix_curve]
+
+        # Sampling-noise band: binomial CI ~±1ppt at n=5000
+        n_trials = 5000
+        lower = [
+            max(0.0, s - 1.96 * (s / 100 * (1 - s / 100) / n_trials) ** 0.5 * 100)
+            for s in solvency
+        ]
+        upper = [
+            min(100.0, s + 1.96 * (s / 100 * (1 - s / 100) / n_trials) ** 0.5 * 100)
+            for s in solvency
+        ]
+
+        PERSONA_LABEL_MAP = {
+            "Safe · 99%+": "Safe",
+            "Balanced · 95%+": "Balanced",
+            "Growth-focused · 85%+": "Growth",
+        }
+        persona_colours = {
+            "Safe · 99%+": GREEN,
+            "Balanced · 95%+": AMBER,
+            "Growth-focused · 85%+": RED,
+        }
+        persona_symbols = {
+            "Safe · 99%+": "square",
+            "Balanced · 95%+": "diamond",
+            "Growth-focused · 85%+": "triangle-up",
+        }
+
+        fig = go.Figure()
+
+        # Noise band (faint)
+        fig.add_trace(go.Scatter(
+            x=wealth + wealth[::-1],
+            y=upper + lower[::-1],
+            fill="toself",
+            fillcolor="rgba(14,165,233,.08)",
+            line=dict(width=0),
+            hoverinfo="skip",
+            showlegend=False,
+            name="Sampling noise",
+        ))
+
+        # Main curve — lines + markers so it's legible without colour alone
+        fig.add_trace(go.Scatter(
+            x=wealth, y=solvency,
+            mode="lines+markers",
+            name="Mix curve",
+            line=dict(color=TEAL, width=2.5),
+            marker=dict(size=5, color=TEAL, symbol="circle"),
+            hovertemplate=(
+                "Property: %{customdata}%<br>"
+                "Wealth: %{x:$,.0f}<br>"
+                "Safety: %{y:.1f}%<extra></extra>"
+            ),
+            customdata=mixes_pct,
+        ))
+
+        # Persona rings (distinct symbol per persona)
+        for name, thr, _ in PERSONA_DEFS:
+            pt = find_optimal_mix(mix_curve, thr)
+            if pt is None:
+                continue
+            short = PERSONA_LABEL_MAP.get(name, name)
+            fig.add_trace(go.Scatter(
+                x=[pt.median_mixed_wealth], y=[pt.p_solvent * 100],
+                mode="markers+text",
+                name=short,
+                marker=dict(
+                    size=14, color="white",
+                    symbol=persona_symbols[name],
+                    line=dict(color=persona_colours[name], width=3),
+                ),
+                text=[short], textposition="top center",
+                textfont=dict(size=12, color=persona_colours[name]),
+                hovertemplate=(
+                    f"{short}: {int(round(pt.mix_pct * 100))}% property, "
+                    f"wealth {_fmt_money(pt.median_mixed_wealth)}, "
+                    f"safety {pt.p_solvent:.1%}<extra></extra>"
+                ),
+            ))
+
+        # Currently selected mix — heavier ring, circle symbol
+        selected_pt = next(
+            (p for p in mix_curve if int(round(p.mix_pct * 100)) == breakdown_mix_pct),
+            None,
+        )
+        if selected_pt:
+            fig.add_trace(go.Scatter(
+                x=[selected_pt.median_mixed_wealth], y=[selected_pt.p_solvent * 100],
+                mode="markers",
+                name="Selected mix",
+                marker=dict(
+                    size=18, color="white",
+                    symbol="circle",
+                    line=dict(color=INK, width=3),
+                ),
+                hovertemplate=(
+                    f"Selected: {breakdown_mix_pct}% property, "
+                    f"wealth {_fmt_money(selected_pt.median_mixed_wealth)}, "
+                    f"safety {selected_pt.p_solvent:.1%}<extra></extra>"
+                ),
+            ))
+
+        # Dial safety threshold line
+        fig.add_hline(
+            y=dial_safety_pct,
+            line_dash="dash",
+            line_color=MUTED,
+            annotation_text=f"Safety target: {dial_safety_pct}%",
+            annotation_font_size=11,
+        )
+
+        fig.update_layout(
+            title=dict(
+                text=f"Safety vs wealth tradeoff — {horizon}-year horizon",
+                font=dict(size=15),
+            ),
+            xaxis_title=f"Typical outcome after {horizon} years ($)",
+            yaxis_title="Chance you never run out of cash (%)",
+            yaxis=dict(range=[0, 105]),
+            height=420,
+            margin=dict(t=50, b=40),
+            hovermode="closest",
+            plot_bgcolor="white",
+            legend=dict(orientation="h", y=1.1, x=0),
+        )
+        fig.update_xaxes(gridcolor="#f0f0f0", tickformat="$,.0f")
+        fig.update_yaxes(gridcolor="#f0f0f0", ticksuffix="%")
+        st.plotly_chart(fig, use_container_width=True)
+
+        # --- Safety-target dial ---
+        st.markdown(
+            "**Set a safety target** — the model highlights the highest-wealth mix "
+            "at or above this level."
+        )
+        new_dial = st.slider(
+            "Safety target (%)",
+            min_value=50, max_value=99, value=dial_safety_pct, step=1,
+            key="dial_safety_slider",
+            help="Drag to change the target. The dashed line on the chart moves with it.",
+        )
+
+        # Snap readout: highest-wealth mix at or above the dial threshold
+        qualifying = [pt for pt in mix_curve if pt.p_solvent * 100 >= new_dial]
+        if qualifying:
+            dial_point = max(qualifying, key=lambda pt: pt.median_mixed_wealth)
+            st.markdown(
+                f"At {new_dial}%+ safety: **{int(round(dial_point.mix_pct * 100))}% property** — "
+                f"typical wealth {_fmt_money(dial_point.median_mixed_wealth)}, "
+                f"actual safety {dial_point.p_solvent:.1%}"
+            )
+        else:
+            max_achievable = max(pt.p_solvent * 100 for pt in mix_curve)
+            st.markdown(
+                f"Not achievable above {max_achievable:.0f}% — try raising your "
+                f"max annual top-up or reducing the property portion."
+            )
+
+        st.markdown("---")
+
+        # --- Free % property slider ---
+        st.markdown("**Or set a specific property allocation directly:**")
+        new_free_mix = st.slider(
+            "% property",
+            min_value=0, max_value=100, value=free_mix_pct, step=5,
+            key="free_mix_slider",
+            help=(
+                "Pick your exact property/shares split. "
+                "Selects 'Custom' in the breakdown view."
+            ),
+        )
+
+        # Model-assumption caveat (spec §5.3)
+        _render_html("""
+<p class="frontier-caveat">
+  <b>How this curve works:</b> it blends two full strategies (100% property and 100% shares)
+  as an allocation rule — it doesn't model buying a part-property; a real investor can't sell
+  40% of a house in a bad year. Mid-range mixes may understate a bad year's cash crunch.
+  Sampling noise (shown as a faint band) is ~&#177;1ppt at 5,000 stories.
+</p>""")
+
+        # --- Show as table toggle (accessibility fallback) ---
+        st.markdown("---")
+        show_table = st.checkbox("Show as table", value=False, key="frontier_show_table")
+        if show_table:
+            render_comparison_table(mix_curve, breakdown_mix_pct)
+
+    return int(new_dial), int(new_free_mix)

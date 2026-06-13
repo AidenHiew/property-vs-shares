@@ -181,3 +181,74 @@ def test_model_assumption_caveat_near_dial():
     assert "cash-flow model" in full_html or "excludes" in full_html, (
         "Model-assumption caveat not found in output"
     )
+
+
+# ---------------------------------------------------------------------------
+# Task 5 — frontier expander + dial + free-mix slider
+# ---------------------------------------------------------------------------
+
+def test_frontier_expander_present():
+    """'How much safety does each mix buy?' expander must exist in the app."""
+    at = _run_app()
+    assert not at.exception
+    expander_labels = [e.label for e in at.expander]
+    assert any("safety" in (lbl or "").lower() for lbl in expander_labels), (
+        f"Frontier expander not found. Expanders: {expander_labels}"
+    )
+
+
+def test_dial_safety_slider_present():
+    """A slider with key 'dial_safety_slider' must exist after Task 5."""
+    at = _run_app()
+    assert not at.exception
+    slider_keys = [s.key for s in at.slider]
+    assert "dial_safety_slider" in slider_keys, (
+        f"dial_safety_slider not found. Sliders: {slider_keys}"
+    )
+
+
+def test_free_mix_slider_present():
+    """A slider with key 'free_mix_slider' must exist after Task 5."""
+    at = _run_app()
+    assert not at.exception
+    slider_keys = [s.key for s in at.slider]
+    assert "free_mix_slider" in slider_keys, (
+        f"free_mix_slider not found. Sliders: {slider_keys}"
+    )
+
+
+def test_sidebar_custom_mix_slider_removed():
+    """The sidebar 'Custom mix (% property)' slider must be REMOVED."""
+    at = _run_app()
+    slider_labels = [s.label for s in at.slider]
+    assert not any("Custom mix" in (lbl or "") for lbl in slider_labels), (
+        f"Old 'Custom mix' sidebar slider still present: {slider_labels}"
+    )
+
+
+def test_show_as_table_toggle_inside_expander():
+    """A 'Show as table' checkbox or toggle must be present after Task 5."""
+    at = _run_app()
+    # Look for checkbox with label containing 'table'
+    cb_labels = [c.label for c in at.checkbox]
+    assert any("table" in (lbl or "").lower() for lbl in cb_labels), (
+        f"'Show as table' toggle not found. Checkboxes: {cb_labels}"
+    )
+
+
+def test_model_caveat_linear_blend_present():
+    """The linear-blend model caveat must appear in the frontier expander."""
+    at = _run_app()
+    full_html = " ".join(m.value for m in at.markdown)
+    assert "allocation rule" in full_html or "mid-range mixes" in full_html, (
+        "Linear-blend model caveat not found"
+    )
+
+
+def test_comparison_table_standalone_expander_removed():
+    """The standalone 'Compare all mixes' expander must be REMOVED."""
+    at = _run_app()
+    expander_labels = [e.label for e in at.expander]
+    assert not any("Compare all" in (lbl or "") for lbl in expander_labels), (
+        f"Old 'Compare all mixes' expander still present: {expander_labels}"
+    )

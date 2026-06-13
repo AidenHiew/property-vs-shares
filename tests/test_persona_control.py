@@ -27,21 +27,27 @@ def test_segmented_control_exists_default_balanced():
 
 
 def test_custom_enables_slider():
+    """Picking Custom makes the in-expander free_mix_slider available.
+
+    Task 5: the sidebar 'Custom mix' slider was removed; its role is now served
+    by the 'free_mix_slider' inside the frontier expander. Verify that after
+    picking Custom the free_mix_slider is present and the old sidebar slider is gone.
+    """
     at = _run()
     segs = at.get("segmented_control")
     if segs:
         at.get("segmented_control")[0].set_value("Custom").run()
-        assert any("Custom mix" in (sl.label or "") for sl in at.get("slider")), (
-            "Expected a 'Custom mix' slider after picking Custom"
-        )
     else:
-        # Fallback: set session state directly
         at.session_state["persona_pick"] = "Custom"
         at.run()
-        sliders = at.get("slider")
-        custom_sliders = [sl for sl in sliders if "Custom mix" in (sl.label or "")]
-        assert custom_sliders, "Expected a 'Custom mix' slider"
-        assert not custom_sliders[0].disabled, "Expected Custom mix slider to be enabled"
+    # Old sidebar slider must be gone
+    assert not any("Custom mix" in (sl.label or "") for sl in at.get("slider")), (
+        "Old 'Custom mix' sidebar slider should have been removed in Task 5"
+    )
+    # New in-expander slider must be present
+    assert any(sl.key == "free_mix_slider" for sl in at.get("slider")), (
+        "Expected 'free_mix_slider' (in-expander) to be present after Task 5"
+    )
 
 
 def test_persona_url_param_selects_growth_focused():

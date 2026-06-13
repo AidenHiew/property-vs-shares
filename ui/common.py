@@ -110,6 +110,16 @@ GLOBAL_CSS = f"""
     font-style: italic;
   }}
 
+  /* frontier expander caveat */
+  .frontier-caveat {{
+    font-size: 13px;
+    color: #6b7280;
+    margin: 12px 0 4px;
+    border-left: 3px solid #e5e7eb;
+    padding-left: 10px;
+    font-style: italic;
+  }}
+
   .disclaimer {{ font-size: 12px; color: {MUTED}; border-top: 1px solid {LINE};
                  margin-top: 28px; padding-top: 14px; line-height: 1.6; }}
 

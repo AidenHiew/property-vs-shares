@@ -22,7 +22,7 @@ from model.mix_curve import build_mix_curve
 from ui.persona import (find_optimal_mix, render_persona_cards, render_comparison_table)
 from ui.onboarding import render_hero, render_limitations, render_full_guide
 from model.solvency import flag_forced_sales
-from ui.frontier import render_dot_grid, render_downside_callout, render_failure_taxonomy
+from ui.frontier import render_dot_grid, render_downside_callout, render_failure_taxonomy, render_frontier_expander
 
 
 # ============================================================================
@@ -245,13 +245,8 @@ with st.sidebar:
     )
 
     st.markdown("**The choice**")
-    _custom = st.session_state.get("persona_pick") == "Custom"
-    property_share_mix_pct = st.slider(
-        "Custom mix (% property)", 0, 100, qp("mix", int, 50), step=10,
-        disabled=not _custom,
-        help="Enabled when you pick 'Custom' above. Otherwise the chosen persona sets the mix.",
-    )
-    property_share_mix = property_share_mix_pct / 100
+    # Custom mix slider removed (Task 5): mix is now driven by the in-expander
+    # free_mix_slider. Alias property_share_mix_pct → free_mix_pct for URL persistence.
     portfolio_profile = st.selectbox(
         "If you bought shares, which?", ["asx_only", "global", "blended"], index=qp("port", int, 2),
         format_func=lambda x: {"asx_only": "Australian (ASX)", "global": "Global",
@@ -355,6 +350,10 @@ dial_safety_pct = max(50, min(99, _dial_raw))  # clamped once on read; write use
 _free_mix_raw = qp("free_mix", int, 50)
 free_mix_pct = max(0, min(100, _free_mix_raw))  # clamped once on read; write uses this directly
 
+# A4 — alias: sidebar Custom mix slider removed; free_mix_pct is now the sole source of truth.
+property_share_mix_pct = free_mix_pct
+property_share_mix = property_share_mix_pct / 100
+
 st.query_params.update({k: str(v) for k, v in {
     "price": purchase_price, "dep": deposit_pct, "yield": round(gross_yield * 100, 1),
     "age": ["new_build", "established_post_2017", "established_pre_2017"].index(property_age),
@@ -362,7 +361,7 @@ st.query_params.update({k: str(v) for k, v in {
     "income": income, "rate": round(loan_rate * 100, 1), "yrs": horizon, "topup": max_top_up,
     "landtax": annual_land_tax,
     "persona": _persona_qp,
-    **({"mix": property_share_mix_pct} if _persona_qp == "Custom" else {}),
+    **({"mix": free_mix_pct} if _persona_qp == "Custom" else {}),
     "port": ["asx_only", "global", "blended"].index(portfolio_profile),
     "regime": ["current", "restricted_2027"].index(property_regime),
     "state": state,
@@ -606,6 +605,29 @@ _render_html(f"""
 """)
 
 # ---------------------------------------------------------------------------
+# Frontier expander (Task 5) — "How much safety does each mix buy?"
+# Dial + free-mix slider live here; returns updated values to write back to URL.
+# ---------------------------------------------------------------------------
+_new_dial, _new_free_mix = render_frontier_expander(
+    mix_curve=mix_curve,
+    horizon=horizon,
+    breakdown_mix_pct=breakdown_mix_pct,
+    dial_safety_pct=dial_safety_pct,
+    free_mix_pct=free_mix_pct,
+    max_top_up=max_top_up,
+)
+
+# Write back URL params for dial and free_mix (clamped)
+dial_safety_pct = max(50, min(99, _new_dial))
+free_mix_pct = max(0, min(100, _new_free_mix))
+st.query_params["dial_safety"] = str(dial_safety_pct)
+st.query_params["free_mix"] = str(free_mix_pct)
+
+# If user moved the free-mix slider, switch persona_pick to "Custom"
+if _new_free_mix != qp("free_mix", int, 50):
+    st.session_state["persona_pick"] = "Custom"
+
+# ---------------------------------------------------------------------------
 # Detail expanders
 # ---------------------------------------------------------------------------
 with st.expander("📈 Year-by-year breakdown (chart + table)"):
@@ -616,8 +638,8 @@ with st.expander("📈 Year-by-year breakdown (chart + table)"):
     st.markdown("**Shares — year by year**")
     render_shares_year_table(result, horizon, breakdown_mix_pct, deflate, yearly_deflator)
 
-with st.expander("⚖️ Compare all property/shares mixes"):
-    render_comparison_table(mix_curve, breakdown_mix_pct)
+# NOTE: "Compare all mixes" standalone expander removed (Task 5).
+# The same data is now accessible via the "Show as table" toggle in the frontier expander.
 
 with st.expander("🎲 Range of outcomes & cashflow stress"):
     fig = go.Figure()
