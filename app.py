@@ -404,14 +404,6 @@ def cached_run(**kwargs):
 
 
 # ---------------------------------------------------------------------------
-# Recommendation (auto-recompute: one base run + post-hoc mix curve)
-# ---------------------------------------------------------------------------
-st.markdown('<div class="pvs-section">What the model suggests at each safety level</div>', unsafe_allow_html=True)
-st.markdown('<div class="pvs-section-sub">Pick the safety level that matches your comfort — '
-            'the model finds the property/shares mix that delivers it with the most wealth.</div>',
-            unsafe_allow_html=True)
-
-# ---------------------------------------------------------------------------
 # Base run (one simulation; no per-mix re-runs) + input-hash auto-recompute
 # ---------------------------------------------------------------------------
 # Hash the full run_kwargs to detect input changes.
@@ -444,7 +436,6 @@ mix_curve = build_mix_curve(
     ceiling=max_top_up,
 )
 
-render_persona_cards(mix_curve, horizon)
 balanced = find_optimal_mix(mix_curve, 0.95)
 PERSONA_TO_THRESHOLD = {
     "Safe · 99%+": 0.99,
@@ -456,16 +447,18 @@ label_map = {k: k for k in options}
 _persona_default = qp("persona", str, "Balanced · 95%+")
 if _persona_default not in options:  # guard stale/invalid URL values (e.g. old names, "None")
     _persona_default = "Balanced · 95%+"
-picked = st.segmented_control(
-    "View breakdown for", options, format_func=lambda k: label_map[k],
-    default=_persona_default, key="persona_pick",
-)
-if picked is None:
-    picked = "Balanced · 95%+"
-if picked == "Custom":
+
+# Derive breakdown_mix_pct from session state (from prior rerun) or URL params.
+# The segmented_control widget is rendered in position 5 of the spec §4 hierarchy (below
+# the headline and callout); its value is available via session_state from the previous
+# rerun, giving us breakdown_mix_pct here before the widget is placed on screen.
+_picked_from_state = st.session_state.get("persona_pick")
+if _picked_from_state not in options or _picked_from_state is None:
+    _picked_from_state = _persona_default
+if _picked_from_state == "Custom":
     breakdown_mix_pct = property_share_mix_pct
 else:
-    _row = find_optimal_mix(mix_curve, PERSONA_TO_THRESHOLD[picked])
+    _row = find_optimal_mix(mix_curve, PERSONA_TO_THRESHOLD[_picked_from_state])
     breakdown_mix_pct = int(round(_row.mix_pct * 100)) if _row else (
         int(round(find_optimal_mix(mix_curve, 0.95).mix_pct * 100))
         if find_optimal_mix(mix_curve, 0.95) else 50
@@ -528,21 +521,36 @@ if deflate:
         np.percentile(result["mixed_outside_cash_per_trial_year"].max(axis=1), 90)
     ) if breakdown_mix > 0.0 else 0.0
 
-# "What now?" guidance
-_render_html(f"""
-<div class="blurb" style="max-width:none;margin-top:6px;">
-<b>What this means:</b> if you want both, the recommended split is the most wealth at that safety level — e.g. put the
-property-share of your savings toward the property and the rest into shares. It is <i>not</i> a push to own both.
-Next step: talk to a licensed financial adviser about your loan approval, tax, and goals.
+# ---------------------------------------------------------------------------
+# RENDER SECTION — spec §4 hierarchy order
+# All computations above are complete; only render calls from here on.
+# ---------------------------------------------------------------------------
+
+# 1. Example-data nudge
+_render_html("""
+<div class="pvs-section-sub" style="margin-top:4px;padding:10px 14px;
+  background:rgba(245,158,11,.07);border-radius:8px;border:1px solid rgba(245,158,11,.3);">
+  <b>These are example numbers</b> — change them in the left panel to match your situation.
 </div>""")
 
-render_limitations()
+# 2. Viability flag (reworded: "Within range" replaces "Comfortable")
+wyc = result["worst_year_cash"]
+if wyc <= max_top_up:
+    flag = ("ok", f"Within range — the worst simulated year needs about {_fmt_money(wyc)}, "
+                  f"inside your {_fmt_money(max_top_up)} ceiling.")
+elif wyc <= max_top_up * 1.25:
+    flag = ("warn", f"Tight — a bad year could need about {_fmt_money(wyc)} vs your "
+                    f"{_fmt_money(max_top_up)} ceiling. A rate or rent shock could tip you over.")
+else:
+    flag = ("bad", f"Stretched — a bad year could need about {_fmt_money(wyc)}, well above your "
+                   f"{_fmt_money(max_top_up)} ceiling. Consider more shares or a bigger deposit.")
+_render_html(
+    f'<div class="flag {flag[0]}">'
+    f'<span class="flag-emoji">{"✅" if flag[0]=="ok" else "⚠️" if flag[0]=="warn" else "❌"}'
+    f'</span> {flag[1]}</div>'
+)
 
-st.markdown("---")
-
-# ---------------------------------------------------------------------------
-# Headline + feasibility + tiles
-# ---------------------------------------------------------------------------
+# 3. Headline — dot grid + natural-frequency phrasing + pvs-section-sub context line
 n = result["property_terminal_wealth"].size
 render_dot_grid(
     p_succeeds=result["p_property_succeeds"],
@@ -553,7 +561,7 @@ _render_html(f"""<div class="pvs-section-sub">Property beats shares in
 {result['p_property_wins']:.0%} of stories, but only {result['p_solvent']:.0%}
 stay within your {_fmt_money(max_top_up)} cash ceiling. "Succeeds" needs both.</div>""")
 
-# Downside callout (mix-aware; suppressed at mix=0 by render_downside_callout itself)
+# 4. Downside callout + failure-taxonomy expander
 render_downside_callout(
     worst_year_cash=result["worst_year_cash"],
     total_top_ups=_callout_total_top_ups,
@@ -567,7 +575,7 @@ render_downside_callout(
     deflate=deflate,
 )
 
-with st.expander("What are the failure modes? (2x2 breakdown)"):
+with st.expander("What are the failure modes? (2×2 breakdown)"):
     render_failure_taxonomy(
         mixed_outside_cash=result["mixed_outside_cash_per_trial_year"],
         mixed_terminal=result["mixed_terminal_wealth"],
@@ -575,18 +583,22 @@ with st.expander("What are the failure modes? (2x2 breakdown)"):
         ceiling=max_top_up,
     )
 
-# Feasibility flag
-wyc = result["worst_year_cash"]
-if wyc <= max_top_up:
-    flag = ("ok", f"✅ Comfortable — the worst simulated year needs about {_fmt_money(wyc)}, within your "
-                  f"{_fmt_money(max_top_up)} ceiling.")
-elif wyc <= max_top_up * 1.25:
-    flag = ("warn", f"⚠️ Tight — a bad year could need about {_fmt_money(wyc)} vs your {_fmt_money(max_top_up)} "
-                    f"ceiling. A rate or rent shock could tip you over.")
-else:
-    flag = ("bad", f"❌ Stretched — a bad year could need about {_fmt_money(wyc)}, well above your "
-                   f"{_fmt_money(max_top_up)} ceiling. Consider more shares or a bigger deposit.")
-_render_html(f'<div class="flag {flag[0]}">{flag[1]}</div>')
+# 5. Cards — section header + persona cards + segmented_control
+st.markdown('<div class="pvs-section">What the model suggests at each safety level</div>',
+            unsafe_allow_html=True)
+st.markdown('<div class="pvs-section-sub">Pick the safety level that matches your comfort — '
+            'the model finds the property/shares mix that delivers it with the most wealth.</div>',
+            unsafe_allow_html=True)
+render_persona_cards(mix_curve, horizon)
+
+# Segmented control: renders here (position 5); its value was already read from session
+# state above for the computation block. On next rerun the session-state value is current.
+picked = st.segmented_control(
+    "View breakdown for", options, format_func=lambda k: label_map[k],
+    default=_persona_default, key="persona_pick",
+)
+if picked is None:
+    picked = "Balanced · 95%+"
 
 if breakdown_mix < 1.0:
     pp = int(breakdown_mix * 100)
@@ -603,6 +615,8 @@ _render_html(f"""
   <div class="tile {good}"><div class="tlabel">Chance you never run out of cash</div><div class="tval">{result['p_solvent']:.0%}</div></div>
 </div>
 """)
+
+render_limitations()
 
 # ---------------------------------------------------------------------------
 # Frontier expander (Task 5) — "How much safety does each mix buy?"

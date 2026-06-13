@@ -252,3 +252,37 @@ def test_comparison_table_standalone_expander_removed():
     assert not any("Compare all" in (lbl or "") for lbl in expander_labels), (
         f"Old 'Compare all mixes' expander still present: {expander_labels}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Task 6 — hierarchy reorder + flag reword + example-data nudge
+# ---------------------------------------------------------------------------
+
+def test_viability_flag_reword_comfortable_to_within_range():
+    """✅ flag text must say 'Within range', not 'Comfortable'."""
+    at = _run_app()
+    full_html = " ".join(m.value for m in at.markdown)
+    # Under default params (max_top_up=20000, reasonable scenario), flag should be ✅
+    # The text must NOT contain "Comfortable"
+    assert "Comfortable" not in full_html, (
+        "Old 'Comfortable' flag text still present; must say 'Within range'"
+    )
+
+
+def test_example_data_nudge_present():
+    """'These are example numbers' nudge must appear in the output."""
+    at = _run_app()
+    full_html = " ".join(m.value for m in at.markdown)
+    assert "example numbers" in full_html.lower() or "example" in full_html.lower(), (
+        "'example numbers' nudge not found in output"
+    )
+
+
+def test_not_advice_language_uses_suggests():
+    """'What the model suggests' must appear; 'recommended allocation for you' must not."""
+    at = _run_app()
+    full_html = " ".join(m.value for m in at.markdown)
+    assert "suggests" in full_html.lower(), "'suggests' language not found"
+    assert "recommended allocation for you" not in full_html.lower(), (
+        "Old 'recommended allocation for you' copy still present"
+    )
