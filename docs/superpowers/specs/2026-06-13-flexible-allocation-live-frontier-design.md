@@ -1,8 +1,10 @@
 # Design: Flexible allocation, live recompute, and the trust/downside layer
 
 **Date:** 2026-06-13
-**Status:** Draft for review
+**Status:** Draft for review — **rev 2** (incorporates a 3-lane adversarial spec review: engineering-feasibility, completeness/ambiguity, finance-domain-correctness)
 **Topic:** Expand the property-vs-shares tool beyond 3 fixed persona options into flexible, live allocation control — and close the trust/downside gaps a design review surfaced.
+
+> **Rev 2 changelog (what the adversarial review changed):** added a mix-aware-downside contract and a model-assumption caveat for the linear blend (it understates intermediate-mix cash stress); made the single-run output mapping explicit (every chart derives post-hoc, no second simulation); pinned the deflation + comparison-mode contract for the curve; replaced the unachievable "300ms timer + ✓ pulse" with a feasible Streamlit mechanism and surfaced the base-run cost; defined `$Y total top-ups` and `forced_sale_rate` precisely; **deferred `rental_yield_sigma`** (not a cheap fix); added new-URL-param guards and downgraded A/B snapshots to session-state-only; resolved the "Compare all mixes" table fate; tightened not-advice language.
 
 ---
 
@@ -12,27 +14,25 @@ Today the tool offers three fixed persona cards (Safe / Balanced / Wealth Maximi
 
 This redesign:
 
-1. **Makes the whole allocation curve come from a single Monte Carlo run** (vectorised post-trial blend), which collapses the expensive 11-point sweep into the base run. This is the keystone — it makes everything below cheap.
-2. **Adds flexible allocation control** — keep the reassuring 3 cards as the live default, and add a continuous "safety target" dial + free mix slider + an efficiency-frontier chart, one tap away.
-3. **Makes recompute live** — changing an input auto-recomputes (debounced ~300ms); the ↻ button is removed and replaced with clear stale/updating micro-states.
-4. **Closes the biggest gap a design review found** — the downside (the "bad ~27%") is currently hidden in a collapsed expander. This redesign surfaces, in plain dollars and up front, what being wrong costs.
-5. **Folds in a batch of high-value design-review fixes** — plain-English headline with a dot grid, information-hierarchy reorder, card renames / softened steering, accessibility (contrast + colourblind), and mobile fallbacks.
+1. **Derives the whole allocation curve from a single Monte Carlo run** (vectorised post-trial blend), collapsing the 11-point sweep into the base run. Keystone — it makes everything below cheap.
+2. **Adds flexible allocation control** — keep the reassuring 3 cards as the live default, add a continuous "safety target" dial + free mix slider + a plain-language tradeoff chart, one tap away.
+3. **Makes recompute automatic** — changing an input auto-recomputes (no manual button); allocation controls (dial/mix) are instant.
+4. **Closes the biggest gap the design review found** — the downside (the "bad ~27%") is currently buried in a collapsed expander. Surface, in plain dollars and up front, what being wrong costs — computed correctly for the *selected mix*.
+5. **Folds in high-value design-review fixes** — dot-grid headline, hierarchy reorder, card renames / softened steering, accessibility, mobile fallbacks.
 
-A side-by-side **A/B scenario compare** (exactly two scenarios) follows as a separate phase, made cheap by the same engine work.
+A side-by-side **A/B scenario compare** (exactly two scenarios) follows as a separate phase.
 
-Audience is unchanged: non-expert "mum & dad" Australian investors. The tool remains explicitly **not financial advice**.
+Audience unchanged: non-expert "mum & dad" Australian investors. The tool remains explicitly **not financial advice**.
 
 ---
 
-## 2. Locked decisions (from brainstorming)
+## 2. Locked decisions (with rev-2 refinements)
 
-These were decided with the user and a two-lane (modeling-expert + retail-investor) plus three-lane (UX / data-viz / trust+accessibility) design review. They are inputs to this spec, not open questions.
-
-- **D1 — Best of both, not either/or.** Keep the 3 cards as the default hero *and* add the continuous dial/frontier. They are two readings of one curve.
-- **D2 — Cards stay as default; dial/frontier live in an expander below them**, not replacing the cards.
-- **D3 — Live = auto + clear states.** No manual button. Recompute fires automatically ~300ms after the user stops changing an input. While computing: dim the stale figures + show "updating…", then a brief "updated ✓". (Chosen over keeping a manual button or a bare spinner.)
+- **D1 — Best of both, not either/or.** Keep the 3 cards as the default hero *and* add the continuous dial/frontier — two readings of one curve.
+- **D2 — Cards stay as default; dial/frontier in an expander below them**, not replacing the cards.
+- **D3 (refined) — Auto recompute, no manual button.** Recompute fires automatically when an input changes (mechanism in §3.5). Allocation controls (dial, free-mix) never recompute — they read the precomputed curve, so they are instant. **Refinement from review:** the literal "~300ms debounce timer" and "updated ✓ pulse" are *not* achievable in pure Streamlit (no native timer; full-rerun DOM). Replaced with: input-hash-guarded recompute + a "recalculating…" spinner + stale-dim of prior figures. A true timed debounce / ✓-pulse is possible only via a JS component — **deferred**, not in scope.
 - **D4 — A/B compare = exactly two scenarios** (not N).
-- **D5 — Fold all high-value design-review fixes into this spec** (trust/downside, dot grid, hierarchy reorder, renames, a11y, mobile) — they are cheap relative to the engine work.
+- **D5 — Fold all high-value design-review fixes in** (trust/downside, dot grid, hierarchy reorder, renames, a11y, mobile).
 
 ---
 
@@ -40,167 +40,204 @@ These were decided with the user and a two-lane (modeling-expert + retail-invest
 
 ### 3.1 The unlock (verified)
 
-`model/monte_carlo.py:234-236` applies the property/shares blend as a **pure scalar operation on already-computed per-trial arrays**:
+`model/monte_carlo.py:234-237` applies the blend as pure post-trial algebra on already-computed per-trial arrays:
 
 ```python
 mix = property_share_mix
 mixed_terminal     = mix * p_terminal + (1 - mix) * s_terminal
-mixed_outside_cash = mix * p_outside_cash   # only property has outside-cash demand
+mixed_outside_cash = mix * p_outside_cash            # only property carries outside-cash demand
 mixed_forced_flags = flag_forced_sales(mixed_outside_cash, serviceability_ceiling)
 ```
 
-Because the blend happens *after* the trials are simulated, **every mix point can be derived from one run's `p_terminal`, `s_terminal`, and `p_outside_cash` arrays** — no re-simulation per mix. This is what makes the live dial and the frontier cheap.
+Every mix point — and every per-trial-year path — is derivable from one run's unblended arrays. No re-simulation per mix.
 
-### 3.2 The refactor
+### 3.2 The `build_mix_curve` refactor
 
-Introduce a pure function that builds the whole curve from the unblended per-trial arrays:
+A pure function builds the curve from the base run's unblended arrays:
 
 ```
-build_mix_curve(p_terminal, s_terminal, p_outside_cash, ceiling, mixes) -> list[MixPoint]
+build_mix_curve(p_terminal, s_terminal, p_outside_cash, p_wealth_path, s_wealth_path,
+                ceiling, mixes) -> list[MixPoint]
 ```
 
-where `mixes = np.linspace(0, 1, N)` and each `MixPoint` carries:
-`mix_pct, median_mixed_wealth, p_solvent, p_succeeds, p_mix_beats_pure_shares, worst_year_cash, forced_sale_rate`.
+`mixes = np.linspace(0, 1, N)`, default **N = 21** (every 5% property). Each `MixPoint` carries, **all computed from the mix-scaled arrays** (see §5.3 — this is a correctness must-fix):
+`mix_pct, median_mixed_wealth, p_solvent, p_succeeds, p_mix_beats_pure_shares, worst_year_cash, total_top_ups, forced_sale_rate`.
 
-Vectorised over the mix axis (shape `(N, trials)`), the whole curve is a handful of NumPy reductions, sub-second at `trials=5000`.
+Vectorised over the mix axis; arrays are at most `(21, 5000, 40)` ≈ 32 MB — fine.
 
-- **Phase-1 task 0 (verification):** confirm `run_monte_carlo` returns (or can cheaply expose) the unblended `p_terminal`, `s_terminal`, and the per-trial-year `p_outside_cash` array. The current return dict already exposes `property_terminal_wealth`, `shares_terminal_wealth`, and `mixed_outside_cash_per_trial_year`; if the raw property outside-cash array isn't exposed, refactor the return to include it. **No behaviour change** — the single-mix path must produce byte-identical results.
-- Replace `compute_persona_sweep` (11 runs × 2,000 trials) with `build_mix_curve` over the single 5,000-trial base run. Cards, frontier, and dial all read this one curve.
-- **Curve resolution:** `N = 21` (every 5% property) as the default; the dial snaps to the nearest and interpolates the displayed figures linearly between adjacent points. (101 points is affordable too; 21 keeps the frontier chart and comparison table uncluttered. Revisit if interpolation feels coarse.)
+**Output mapping (must be explicit — the single-run win is illusory otherwise).** Every downstream output maps to exactly one source; **nothing triggers a second `run_monte_carlo` call**:
+
+| Output | Source |
+|---|---|
+| 3 cards, frontier chart, dial readout | `build_mix_curve` (the curve) |
+| Year-by-year wealth fan, per-year tables | post-hoc blend of base-run paths: `mix·p_wealth_path + (1-mix)·s_wealth_path` (verified: `monte_carlo.py:261` does exactly this internally) |
+| Terminal-wealth histogram, cashflow-stress chart | post-hoc on base-run per-trial arrays at the selected mix |
+| Downside callout + tiles (worst-year cash, total top-ups, forced-sale rate) | mix-scaled arrays at the **selected** mix (§5.3) |
+
+- **Phase-1 Task 0 (verify):** confirm `run_monte_carlo` exposes raw property-only `p_outside_cash` per-trial-year (engineering review located it as `outside_cash_per_trial_year`, raw, ~line 210) and the unblended `p_wealth_path` / `s_wealth_path`. If anything is internal-only, refactor the return to expose it. **Byte-identical** single-mix results required (regression gate).
+- Replace `compute_persona_sweep` (11×2,000) with `build_mix_curve` over the single 5,000-trial run; remove its `↻` button + `sweep_key`/`stale` session-state machinery.
 
 ### 3.3 Common random numbers (CRN)
 
-Pass the **same seed to the base run** so all mix points share identical underlying return/rate/vacancy paths. Differences along the curve then reflect only the blend, not Monte Carlo noise — the "optimal mix" stops jumping between runs. (The existing seed / seed+1 split for decorrelating return vs loan-rate streams is preserved.)
+Same seed for the base run → all mixes share identical return/rate/vacancy draws; curve reflects the blend, not noise. Preserve the existing seed / seed+1 split (returns vs loan-rate decorrelation).
 
-### 3.4 Cheap rigor fixes (while in the engine)
+- **False-precision guard:** CRN makes the curve *look* smooth by design. Show a sampling-noise band (binomial CI ≈ ±0.6ppt at n=5000 on the solvency axis); also note the **wealth axis** carries ≈±2–3% noise, so the "suggested mix" near a flat optimum should be described as a *range*, not a precise point.
+- **Student-t caveat (verify):** under `return_distribution="student_t"`, sampling may consume a different number of variates per trial than Gaussian; confirm the "same underlying paths across mixes" guarantee still holds (it should, since there's only one run, but verify the RNG-stream usage).
 
-- **Wire up `rental_yield_sigma`** — currently plumbed through the call path but hard-set to `0.0` in `app.py`. Expose a small default so rental income has realistic variance.
-- **(Optional, flagged)** the property "overflow" share bucket compounds at a constant `SHARE_RETURN_FOR_OVERFLOW = 8.5%` rather than the trial's stochastic share path, slightly inflating property in bad-share futures. Low priority; note in code, defer fix.
+### 3.4 Rigor fixes — scoped
 
-### 3.5 Live-update state machine (Streamlit)
+- **`rental_yield_sigma`: DEFERRED (review pushback).** It is plumbed but *unused* (`monte_carlo.py` comment ~line 129; `app.py:305` hard-sets `0.0`). Activating it requires generating/consuming per-year yield draws in the trial loop, deciding correlation with vacancy (else it double-counts income variance), and recalibration — and it would break the byte-identical Phase-1 gate. Keep `0.0` as a **documented simplification**; if pursued later, it is its own task with its own acceptance criteria (e.g. AR(1) persistence ~0.7, σ≈0.5%, total rental-income variance up ≤~30% vs vacancy-only).
+- **Overflow bucket** (`SHARE_RETURN_FOR_OVERFLOW = 8.5%` constant) — slightly flatters property in bad-share futures; documented, deferred.
 
-Define every state explicitly (the current design only handles "stale" via the button):
+### 3.5 Recompute mechanism + state machine (feasible Streamlit)
 
-| State | Trigger | UI treatment |
+Mechanism (replaces D3's unachievable timer): on each rerun, hash the *input* parameters into `st.session_state`. If the hash changed, recompute the base run (cached via `@st.cache_data` on the input kwargs) and stash the result in session state; otherwise render the stashed result. Scope the results region in an `st.fragment` so allocation-only interactions (dial/mix) rerun just the fragment and never recompute. **Dial/free-mix are exempt from recompute entirely** (curve lookup only).
+
+| State | Trigger | UI |
 |---|---|---|
-| **Initial load** | first paint | spinner: "Running 5,000 simulated futures…"; main body gated until first curve ready |
-| **Fresh** | curve matches current inputs | normal render |
-| **Debouncing** | an input changed <300ms ago | keep showing previous figures, dimmed (`opacity:.6`) + inline "updating…" badge |
-| **Recomputing** | debounce elapsed, run in flight | same dimmed state; spinner on the affected region |
-| **Updated** | new curve ready | brief "updated ✓" pulse, then Fresh |
-| **No-solvent-mix** | `build_mix_curve` finds no mix meeting a threshold | card shows "Not reachable at your cash ceiling — raise the ceiling or deposit"; never crash; all-None handled (today only Safe handles None) |
-| **Error** | engine raises / OOM | friendly message: "Something went wrong — try a shorter horizon or smaller deposit." Wrap the run in try/except. |
+| Initial load | first paint, no stashed result | spinner "Running 5,000 simulated futures…"; gate the results region |
+| Fresh | input-hash matches stash | normal render |
+| Recomputing | input-hash changed | render stashed (previous) result dimmed (`opacity:.6`) + "recalculating…" spinner on the results region |
+| No-solvent-mix | no mix meets a card/dial threshold | "Not reachable at your cash ceiling — raise the ceiling or deposit"; applies to **all** cards (today only Safe handles `None`); the dial shows a "not achievable above X%" annotation rather than a ring |
+| Error | engine raises | `try/except` → "Something went wrong — try a shorter horizon or smaller deposit." (no try/except exists today) |
 
-- **Dial / mix slider are exempt from recompute** — they read the precomputed curve, so they update instantly (no debounce, no spinner).
-- **Debounce implementation:** track an input-parameter hash in `st.session_state`; recompute only when it changes and a settle interval has passed. Prefer `st.fragment` to scope reruns to the results region if it fits; otherwise a session-state guard. Flag as an implementation detail to validate — native debounce isn't a first-class Streamlit primitive.
+- **Performance reality (review):** the base run is a Python per-trial loop — likely **multi-second cold**, not sub-second (only `build_mix_curve` is sub-second). With no button, it fires on every input change. Acceptance target to validate in Phase-1 Task 0: **cold base run p95 ≤ ~3s on the reference machine**; if it exceeds this, the fallback is to run it in a background thread (Streamlit ≥1.37) so the dimmed-stale UI stays interactive — *not* to reintroduce a manual button (D3). Either way, dial/mix stay instant.
 
 ---
 
 ## 4. Information hierarchy & UI (Phase 2)
 
-New top-to-bottom order of the main pane (reordered per the UX lane — the viability gate and the downside must precede the recommendations):
+Main-pane order (UX-lane reorder — viability + downside precede recommendations):
 
-1. **Example-data nudge** — "These are example numbers — change them in the left panel to match your situation." (one `st.info`-style callout).
-2. **Viability flag** — the ✅/⚠️/❌ feasibility flag, moved **above** the cards (it's the "is this even viable for me?" gate). Reword the ✅ case from "Comfortable" to "**Within range** — the worst single year stays inside your $X ceiling." ("Comfortable" over-reassures.)
-3. **Headline** — dot grid + plain words (see §5).
-4. **Downside callout** — what the bad outcomes cost, in dollars, up front (see §5).
-5. **Cards** — renamed, live points on the curve (see §4.1).
-6. **"See why each mix sits where it does →"** — an expander (not labelled "Fine-tune") holding the frontier chart + safety dial + free mix slider (see §4.2).
-7. **Existing detail expanders** — year-by-year, compare-all-mixes table, distributions/stress, tax/setup. Largely unchanged; see §7 redundancy note.
+1. **Example-data nudge** — "These are example numbers — change them in the left panel."
+2. **Viability flag** — the ✅/⚠️/❌ feasibility flag, moved **above** the cards. Reword the ✅ case from "Comfortable" → "**Within range** — the worst single year stays inside your $X ceiling." Flag uses the **selected-mix** downside (§5.3), not pure-property.
+3. **Headline** — dot grid + plain words (§5.1).
+4. **Downside callout** — dollars, up front (§5.2–5.3).
+5. **Cards** — renamed, live (§4.1).
+6. **"See why each mix sits where it does →"** expander — the tradeoff chart + safety dial + free-mix slider (§4.2).
+7. **Detail expanders** — year-by-year, distributions/stress, tax/setup (see §4.3 for the comparison-table fate).
 
 ### 4.1 Cards
 
-- Rename to descriptive, non-steering labels: **"Safe · 99%", "Balanced · 95%", "Growth-focused · 85%"** (drop "Wealth Maximizer" — aspirational steering in a not-advice tool).
-- **Remove the ★** on Balanced; replace with one attributable line: "Unsure? **Balanced (95% safety)** is a common starting point."
-- Rename the section header "Recommended allocation for you" → "**What the model suggests at each safety level**."
-- Cards are now live (read from the curve); no ↻ button, no stale banner.
+- Rename: **"Safe · 99%", "Balanced · 95%", "Growth-focused · 85%"** (drop "Wealth Maximizer").
+- **Remove the ★**; one attributable line: "Unsure? **Balanced (95% safety)** is a common starting point."
+- Section header "Recommended allocation for you" → "**What the model suggests at each safety level**." Use "suggests/selects", never "recommended", anywhere in the UI (not-advice; see §8).
+- **Card label semantics (review):** each card is `find_optimal_mix` = *the highest-wealth mix whose `p_solvent ≥ threshold`*. The plotted point on the chart is that mix, whose actual solvency may sit slightly above the threshold. Label format: "Balanced · 95%+" (the "+" signals "at least"), and the card shows the point's *actual* solvency. If two cards resolve to the same mix, merge into one card (preserve today's merge behaviour).
 
-### 4.2 Frontier + dial expander
+### 4.2 Tradeoff chart + dial expander
 
-- **Name it plainly:** "How much safety does each mix buy?" (not "efficiency frontier", not "Fine-tune").
-- **Chart:** x = "Typical outcome after 25 years" ($), y = "Chance you never run out of cash" (0–100%). Every mix is a point on the curve; the 3 cards are 3 labelled rings on it (callout labels, not in-place clutter); the recommended mix is a heavier ring. Add a thin **±sampling-noise band** (binomial CI, ≈±0.6ppt at n=5000) so the curve doesn't imply false precision.
-- **Safety dial** = a `st.slider` beside the chart (true on-chart drag isn't supported in Plotly-in-Streamlit). Dragging it moves a threshold line along the curve and updates the recommended-mix ring. Use Plotly `transition` for a soft move between the 21 points so it reads as sliding, not jumping.
-- **Free mix slider** (% property) for users who want to pick a specific split directly.
-- **Remove the sidebar "Custom mix" slider** — this expander supersedes it (kills the split-brain affordance).
+- **Plain name:** "How much safety does each mix buy?" (not "efficiency frontier", not "Fine-tune").
+- **Chart:** x = "Typical outcome after N years" ($), y = "Chance you never run out of cash" (0–100%). Each mix a point; the 3 cards are labelled rings; the selected mix a heavier ring. Add the §3.3 noise band.
+- **Dial** = `st.slider` (true on-chart drag isn't supported in Plotly-in-Streamlit). Moves a threshold line; the suggested-mix ring is the highest-wealth mix at/above the dialed safety.
+  - **Edges/degenerate (review):** above max achievable solvency → no ring + "not achievable above X%"; below the min → ring snaps to the highest-wealth mix. **Non-monotonic / multi-intersection:** when the threshold line crosses the curve at more than one mix, select per `find_optimal_mix` (max wealth among qualifying) and mark only that point; do not draw multiple rings.
+- **Interpolation rule (review):** probabilities (`p_solvent`, `p_succeeds`) interpolate linearly between the 21 points for the dial readout; **dollar/rate fields** (`worst_year_cash`, `total_top_ups`, `forced_sale_rate`) are nonlinear — **snap to the nearest computed mix point**, don't interpolate.
+- **Free mix slider** (% property) for direct selection. **Remove the sidebar "Custom mix" slider** (kills the split-brain).
+
+### 4.3 "Compare all mixes" table (resolved)
+
+The existing `render_comparison_table` is now **redundant with the tradeoff chart** (same per-mix data). Decision: **retire the standalone table**; offer the same data as an optional "Show as table" toggle *inside* the tradeoff expander (accessibility fallback for the chart). This fixes the dangling cross-reference that existed in rev 1.
 
 ---
 
-## 5. Trust & downside layer (folded into Phase 2 — elevated from "Phase 4")
+## 5. Trust & downside layer (folded into Phase 2 — elevated)
 
-This is the **single biggest gap** all three design lanes independently flagged: the downside currently lives in a collapsed expander, so the tool's effective output is one-sidedly positive.
+The single biggest gap all design lanes flagged: the downside is currently opt-in (collapsed expander), making the tool's effective output one-sidedly positive.
 
 ### 5.1 Headline you can read
 
-- Replace the bare "73%" with a **10×10 dot grid** (73 filled green, 27 grey) beside the number, and phrase it as a natural frequency: "**about 7 in 10** of 5,000 what-if **stories built from your numbers**…".
-- **Inline two-sentence explainer** directly under the headline (not a tooltip, not the footer): the number is *not a forecast* — it's the count of fictional 25-year paths, drawn from the ranges the user set, that ended with property ahead and the cash ceiling intact. Avoid "probability", "statistically", "Monte Carlo".
+- Replace bare "73%" with a **10×10 dot grid** + natural frequency: "**about 7 in 10** of 5,000 what-if **stories built from your numbers**…". **Dot rounding (review):** `round(p_succeeds * 100)` filled green; remaining grey; if the 2×2 taxonomy colours are shown elsewhere, the grid stays two-colour (green = succeeds, grey = not) for legibility.
+- **Inline two-sentence explainer** under the headline (not tooltip/footer): the number is *not a forecast* — it's the count of fictional N-year paths, drawn from the ranges the user set, that ended with property ahead and the cash ceiling intact. Avoid "probability/statistically/Monte Carlo".
 
-### 5.2 Downside in dollars, up front
+### 5.2 Downside callout (up front)
 
-A callout immediately below the headline (amber, not buried):
+Amber callout below the headline, **for the selected mix**:
 
-> "**If it goes wrong:** in the worst 1-in-10 stretches you could need about **$X extra in a single year** (`worst_year_cash`, already computed), and about **$Y total top-ups** over the hold. In **Z%** of stories the property would likely have to be sold before the end (`forced_sale_rate`, from the existing `flag_forced_sales`). Worth checking this fits your safety net."
+> "**If it goes wrong:** in the worst 1-in-10 stretches you could need about **$X extra in a single year**, and about **$Y total top-ups (at median) over the hold**. In **Z%** of stories you could have been forced to sell in at least one year. *This comes from the cash-flow model and excludes major repairs, your income stopping, and other personal shocks.* Worth checking it fits your safety net."
 
-- `forced_sale_rate` is a **real model output** (`flag_forced_sales` / `mixed_forced_flags`), so we can state it honestly rather than hand-waving.
-- Words: "could need", "bad stretches", "stories where things go wrong". Avoid "risk/failure/loss/worst case".
-- Detail (in an expander, kept): a **2×2 failure taxonomy** — rows beats/loses shares, columns within/over cash ceiling — each cell with a frequency ("18 in 100") and a dollar anchor. Clearer for laypeople than the terminal-wealth histogram.
+- Detail (expander, kept): the **2×2 failure taxonomy** — beats/loses shares × within/over ceiling — each cell a frequency ("18 in 100") + a dollar anchor (cell-median mixed wealth). Define all four cell colours; keep consistent with the dot grid's green/grey.
+
+### 5.3 Downside metric definitions (must be exact + mix-aware)
+
+The current code computes these from the **pure-property** array even when a mix is selected (`app.py:450` uses raw `outside_cash_per_trial_year`) — a correctness bug. All must be recomputed from `mixed_outside_cash = mix · p_outside_cash` at the **selected** mix, in **consistent units** (pick today's-$ or nominal for the whole callout, not mixed):
+
+- **`worst_year_cash` ($X)** = `percentile(mixed_outside_cash.max(axis=1), 90)` — "worst single year, 1-in-10".
+- **`total_top_ups` ($Y)** = `median(mixed_outside_cash.sum(axis=1))` — "cumulative top-ups over the hold, at median". State it's the median of per-trial sums (≠ sum of medians). Not additive with $X — label clearly.
+- **`forced_sale_rate` (Z%)** = `mean(flag_forced_sales(mixed_outside_cash, ceiling))`. `flag_forced_sales` = `(cash > ceiling).any(axis=1)` — a **single-year** breach detector. Word as "**could have been forced to sell in at least one year**" (accurate), not "would likely have to be sold". Note it is relative to the *user's* ceiling.
+
+**Model-assumption caveat (must-fix — finance lane).** The blend `mixed = mix·property + (1-mix)·shares` and `mixed_outside_cash = mix·p_outside_cash` is a **portfolio-allocation device, not a fractional-property model** — you cannot buy 0.6 of a house, and a real mixed investor cannot sell 40% of the property in a bad year. The linear cash scaling therefore **understates worst-case cash stress at intermediate mixes**. Surface a one-line caveat near the dial/curve ("This blends two full strategies to show an allocation rule — it doesn't model buying a part-property; mid-range mixes may understate a bad year's cash crunch."), and word intermediate-mix downside conservatively.
 
 ---
 
 ## 6. A/B scenario compare (Phase 3)
 
-- A control near the inputs (not a top-of-page toggle, which is a dead state on first visit): "**Save snapshot** / **Compare to saved**."
-- Save **Scenario A = the input parameters** (not the result arrays — avoids memory bloat and stale arrays); recompute B's curve live.
-- Display: two compact headline mini-cards (typical outcome + solvency % each) + **one overlaid frontier chart** — Scenario A solid, Scenario B dashed (same asset-semantic colours; distinguish scenarios by line *style*, not hue). Shade the gap between the curves and draw the safety-target reference line so the *difference* is the primary read.
-- **Mobile:** side-by-side `st.columns(2)` does **not** stack on Streamlit mobile; degrade to `st.tabs()` (A / B / Compare). True side-by-side is tablet+ (≥768px).
-- Exactly two scenarios (D4).
+- Control near the inputs: "**Save snapshot** / **Compare to saved**" (not a top-of-page toggle — dead state on first visit).
+- **Scenario A = the input parameters** (not result arrays). Recompute B's curve live.
+- **Persistence (review):** A/B snapshots live in **`st.session_state` only** — *not* the URL. A full parameter snapshot would exceed practical URL limits (~2,000 chars) and risk the project's known malformed-param crash. Snapshots do **not** survive refresh; the existing single-scenario URL persistence is unchanged. (Do not advertise A/B as "shareable".)
+- Display: two compact headline mini-cards + **one overlaid tradeoff chart** — A solid, B dashed, same asset-semantic colours (distinguish scenarios by line *style*, not hue); shade the gap; draw the safety-target reference line so the *difference* is primary.
+- **Guards (review):** force both scenarios to the **same display mode** (today's-$ vs nominal) and label each scenario with the **regime / comparison-mode it was saved under** (recompute A from its saved params, not the current selectors). If horizons differ, the x-axes differ → **don't overlay**; fall back to two stacked mini-charts with a note.
+- **Mobile:** `st.columns(2)` doesn't stack on Streamlit mobile → degrade to `st.tabs()` (A / B / Compare). True side-by-side is tablet+ (≥768px).
 
 ---
 
 ## 7. Accessibility (folded, Phase 2)
 
-- **Contrast:** `FAINT (#9ca3af)` fails WCAG AA (~2.9:1) and is used for small labels — replace with `MUTED (#6b7280)` for all text. Raise micro-labels (currently 11–12px) to **≥14px** (audience skews 40–60s).
-- **Colourblind:** the green/red semantic system must not be colour-only. Keep the "RECOMMENDED" text badge; ensure the feasibility-flag emoji is ≥16px; give chart lines distinct **dash styles** (property vs shares vs mix) in addition to colour.
-- **Sliders/segmented control:** add a visible hint where a control's enabled-state depends on another; note `st.segmented_control` ARIA completeness is uncertain — validate keyboard/screenreader, fall back to `st.radio` if it's a dead zone.
-- **Numeracy:** the dot grid doubles as a natural-frequency aid; add "(about 7 in 10)" alongside any bare percentage in the headline.
+- **Contrast:** `FAINT (#9ca3af)` fails WCAG AA (~2.9:1) — replace with `MUTED (#6b7280)` for text; micro-labels (11–12px) → **≥14px** (audience skews 40–60s).
+- **Colourblind:** never colour-only. Keep the "RECOMMENDED/SUGGESTED" text badge; flag emoji ≥16px; chart lines get distinct **dash styles** (property/shares/mix) in addition to colour.
+- **Controls:** visible hint where a control's enabled-state depends on another; validate `st.segmented_control` keyboard/screenreader — fall back to `st.radio` if it's a dead zone.
+- **Numeracy:** dot grid + "(about 7 in 10)" beside any bare percentage.
+- **Acceptance protocol:** run axe-core (via Playwright) on the Fresh, Recomputing, and No-solvent-mix states at 380px and 1280px — zero AA violations.
 
 ---
 
-## 8. Out of scope (YAGNI)
+## 8. Not-advice / ethics (folded)
 
-- **Deeper model** (offset account, second property/portfolio, margin-call mode, capex, mid-period rebalancing) — explicitly deferred. The design review ranked this a trap until the UX and current model are solid.
-- **More than two** compare scenarios.
-- **"% property ahead by year"** temporal line and **retiring the terminal-wealth histogram** — reasonable later polish; deferred (note the histogram becomes partly redundant with the frontier + 2×2 taxonomy).
-- **A precise "forced sale" economic model** beyond the existing ceiling-breach flag — we use `flag_forced_sales` as-is and word the downside as "would likely have to be sold", not a precise fire-sale loss.
-
----
-
-## 9. Testing
-
-Per the project's hard-won rule (`CLAUDE.md`): test malformed/boundary inputs explicitly, not just the happy path — "tests pass" ≠ "works" (a shared URL once crashed with 138 green tests).
-
-- **Engine equivalence:** `build_mix_curve` at a given mix must match a full single-mix `run_monte_carlo` for that mix (regression guard; the refactor must not change numbers).
-- **CRN smoothness:** with a fixed seed, the curve's `p_solvent` is near-monotonic in mix and the recommended mix is stable across repeated runs.
-- **No-solvent-mix:** a scenario where no mix clears a threshold returns a sentinel and renders the "Not reachable" state for *all* affected cards without raising (today only Safe handles None).
-- **Live state:** input-hash change flips to debouncing/recomputing then back to fresh; dial moves do **not** trigger recompute.
-- **A/B snapshot:** saving Scenario A captures parameters; changing inputs doesn't mutate A; B recomputes independently.
-- **Persisted/shared state:** keep the existing malformed-URL persona test pattern; extend to any new URL params (dial position, safety target, scenario snapshot).
-- **Deflation:** today's-$ paths still correct after the curve refactor.
+- Replace **every** "recommended" with "suggests / what the model selects" (incl. chart/ring descriptions) — "recommendation to a retail client" has AU regulatory weight.
+- The downside callout carries the "excludes repairs / income shocks / other personal shocks" caveat (§5.2).
+- A one-line **model-risk caveat** sits adjacent to any solvency % in the main flow (not only the footer): the % is the fraction of model paths, sensitive to the assumptions you entered; tax changes are announcement-only.
+- Keep the existing four not-advice disclaimers.
 
 ---
 
-## 10. Phasing
+## 9. Out of scope (YAGNI)
+
+- **Deeper model** (offset account, 2nd property/portfolio, margin-call mode, capex, mid-period rebalancing) — deferred (review ranked it a trap until UX + model are solid).
+- **`rental_yield_sigma` activation** — deferred (§3.4).
+- **> 2 compare scenarios; A/B URL-sharing.**
+- **"% property ahead by year" line; retiring the terminal-wealth histogram** — later polish.
+- **A precise forced-sale economic model** beyond the ceiling-breach flag.
+
+---
+
+## 10. Testing
+
+Per project rule (`CLAUDE.md`): test malformed/boundary inputs explicitly — "tests pass" ≠ "works" (a shared URL once crashed with 138 green tests).
+
+- **Engine equivalence:** `build_mix_curve` at a mix == a full single-mix `run_monte_carlo` for that mix (byte-identical regression; the refactor changes no numbers).
+- **Mix-aware downside:** `worst_year_cash`/`total_top_ups`/`forced_sale_rate` at the selected mix are computed from `mix·p_outside_cash`, not pure property; at mix=0 (pure shares) worst-year cash and forced-sale rate are **0**.
+- **CRN smoothness:** fixed seed → `p_solvent` near-monotonic in mix; suggested mix stable across repeated runs; verify under both `gaussian` and `student_t`.
+- **Deflation contract:** curve built in nominal $; deflation applied per-render; deflated and nominal callouts never mixed; today's-$ paths still correct.
+- **comparison_mode:** curve recomputes on mode switch and is labelled with the active mode.
+- **States:** input-hash change → Recomputing → Fresh; dial/mix moves never recompute; all three cards handle `None`; `try/except` renders the error state.
+- **New persisted state:** clamp dial-safety + free-mix on read *and* write (extend the existing malformed-persona URL test to the new params); A/B snapshot is session-only and never written to the URL.
+- **A/B:** saving A captures params; changing inputs doesn't mutate A; B recomputes; differing-horizon overlay falls back to stacked charts.
+
+---
+
+## 11. Phasing
+
+- **Phase 1 — Engine + auto-recompute:** verify/expose unblended arrays (Task 0, incl. perf p95 target) → `build_mix_curve` (mix-aware metrics) → CRN → output mapping (no second run) → remove sweep + `↻` button → input-hash recompute + `st.fragment` + state machine + `try/except`. Tests §10.
+- **Phase 2 — Flexible UI + trust/downside + a11y:** hierarchy reorder, dot-grid headline + explainer, mix-aware downside callout + caveat + 2×2 taxonomy, cards renamed/de-steered, tradeoff+dial expander (+ table-as-toggle), remove sidebar custom slider, a11y fixes, "suggested" language sweep.
+- **Phase 3 — A/B compare:** session-only snapshot + overlaid/ stacked tradeoff + same-display-mode/regime guards + mobile `st.tabs()`.
 
 Each phase ships standalone.
 
-- **Phase 1 — Engine + live:** verify/expose unblended arrays → `build_mix_curve` → CRN → remove sweep & ↻ button → live state machine → `rental_yield_sigma`. Tests in §9.
-- **Phase 2 — Flexible UI + trust/downside + a11y:** hierarchy reorder, dot-grid headline + explainer, downside-in-dollars callout + 2×2 taxonomy, cards renamed/de-steered, frontier+dial expander, remove sidebar custom slider, accessibility fixes.
-- **Phase 3 — A/B compare:** snapshot + overlaid frontier + mobile `st.tabs()` fallback.
-
 ---
 
-## 11. Open assumptions / risks
+## 12. Open assumptions / risks
 
-- **Streamlit debounce** is not a first-class primitive; `st.fragment` scoping is the preferred path but needs validation. If it can't be made to feel right, fall back to a session-state settle guard.
-- **Plotly-in-Streamlit** can't do true on-chart drag; the dial is a separate slider with an animated transition — acceptable for a personal tool, imperfect at fast dragging.
-- **Curve resolution** (21 points + interpolation) assumed adequate; revisit if the dial feels coarse near flat optima.
-- **Mobile** remains a Streamlit weak spot (sidebar collapses to a hamburger that hides the entire input flow); A/B is tablet+ / tabbed. A fuller mobile pass is out of scope here.
+- **Streamlit recompute UX:** input-hash + `st.fragment` is the chosen mechanism; a timed debounce + "✓ pulse" would need a JS component (deferred). Validate the fragment scopes correctly (inputs in sidebar, results region in the fragment reading from session state).
+- **Base-run cost** (multi-second cold) is the main live-feel risk; background-thread fallback if p95 > ~3s. No manual button (D3).
+- **Plotly-in-Streamlit** can't do on-chart drag; dial is a slider with an animated transition between the 21 points (imperfect at fast dragging).
+- **Linear-blend honesty** (§5.3 caveat) — the curve is an allocation-rule device, not a fractional-property model; intermediate-mix cash stress is understated.
+- **Curve resolution** (21 points + snap/interpolate split) assumed adequate; revisit near flat optima.
+- **Mobile** remains a Streamlit weak spot (sidebar collapses to a hamburger hiding the inputs); A/B is tablet+/tabbed. A fuller mobile pass is out of scope.
