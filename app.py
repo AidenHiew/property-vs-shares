@@ -6,6 +6,7 @@ deeper detail (year-by-year breakdown, allocation table, distributions,
 assumptions) behind expanders. Inputs live in the sidebar, grouped and
 plain-English, and persist in the URL so a tuned scenario is a shareable link.
 """
+import hashlib
 import json
 import numpy as np
 import plotly.graph_objects as go
@@ -20,6 +21,7 @@ from ui.common import (GREEN, TEAL, AMBER, RED, AMBER_DK, INK, MUTED, FAINT, LIN
 from model.mix_curve import build_mix_curve, MixPoint
 from ui.persona import (find_optimal_mix, render_persona_cards, render_comparison_table)
 from ui.onboarding import render_hero, render_limitations, render_full_guide
+from model.solvency import flag_forced_sales
 
 
 # ============================================================================
@@ -61,14 +63,11 @@ def qp(key, cast, default):
         return default
 
 
-import hashlib, json as _json
-
-
 def _input_hash(kwargs: dict) -> str:
     """Stable hash of run_monte_carlo kwargs for change-detection.
     Uses json.dumps with sort_keys so dict ordering doesn't affect the hash."""
     return hashlib.md5(
-        _json.dumps(kwargs, sort_keys=True, default=str).encode()
+        json.dumps(kwargs, sort_keys=True, default=str).encode()
     ).hexdigest()
 
 
@@ -343,11 +342,11 @@ if _persona_qp not in VALID_PERSONAS:
 # --- New URL-persisted allocation controls (clamped on read AND write) ---
 # dial_safety: integer percent in [50, 99]; default 95.
 _dial_raw = qp("dial_safety", int, 95)
-dial_safety_pct = max(50, min(99, _dial_raw))  # clamp on read
+dial_safety_pct = max(50, min(99, _dial_raw))  # clamped once on read; write uses this directly
 
 # free_mix: integer percent of property in [0, 100]; default 50.
 _free_mix_raw = qp("free_mix", int, 50)
-free_mix_pct = max(0, min(100, _free_mix_raw))  # clamp on read
+free_mix_pct = max(0, min(100, _free_mix_raw))  # clamped once on read; write uses this directly
 
 st.query_params.update({k: str(v) for k, v in {
     "price": purchase_price, "dep": deposit_pct, "yield": round(gross_yield * 100, 1),
@@ -360,8 +359,8 @@ st.query_params.update({k: str(v) for k, v in {
     "port": ["asx_only", "global", "blended"].index(portfolio_profile),
     "regime": ["current", "restricted_2027"].index(property_regime),
     "state": state,
-    "dial_safety": max(50, min(99, dial_safety_pct)),
-    "free_mix": max(0, min(100, free_mix_pct)),
+    "dial_safety": dial_safety_pct,
+    "free_mix": free_mix_pct,
 }.items()})
 
 # Stamp duty + buying costs
@@ -473,8 +472,7 @@ result["median_mixed_wealth"] = float(np.median(result["mixed_terminal_wealth"])
 result["mixed_outside_cash_per_trial_year"] = (
     breakdown_mix * base_result["outside_cash_per_trial_year"]
 )
-from model.solvency import flag_forced_sales as _ffs
-_mixed_flags = _ffs(result["mixed_outside_cash_per_trial_year"], max_top_up)
+_mixed_flags = flag_forced_sales(result["mixed_outside_cash_per_trial_year"], max_top_up)
 result["p_mix_solvent"] = float(1.0 - _mixed_flags.mean())
 result["p_mix_beats_pure_shares"] = float(
     ((result["mixed_terminal_wealth"] > base_result["shares_terminal_wealth"])

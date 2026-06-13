@@ -5,7 +5,6 @@ find_optimal_mix now accepts list[MixPoint] from model/mix_curve.py.
 compute_persona_sweep is retired — replaced by build_mix_curve in app.py.
 All three persona cards handle None (not just Safe).
 """
-import numpy as np
 import streamlit as st
 
 from model.mix_curve import MixPoint

@@ -509,8 +509,8 @@ def test_find_optimal_mix_all_three_thresholds_none_handled():
 # These tests use Streamlit's AppTest harness (same pattern as test_persona_control.py).
 # ---------------------------------------------------------------------------
 
-def test_dial_safety_invalid_url_param_clamps_to_95():
-    """dial_safety=999 in URL must clamp to 95 (valid default) and not crash."""
+def test_dial_safety_invalid_url_param_clamps_to_99():
+    """dial_safety=999 in URL must clamp to 99 (maximum) and not crash."""
     from streamlit.testing.v1 import AppTest
     at = AppTest.from_file("app.py", default_timeout=90)
     at.query_params["dial_safety"] = "999"
