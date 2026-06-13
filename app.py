@@ -499,6 +499,13 @@ result["worst_year_cash"] = float(
     np.percentile(result["mixed_outside_cash_per_trial_year"].max(axis=1), 90)
 ) if breakdown_mix > 0.0 else 0.0
 
+# Compute downside callout figures from NOMINAL arrays (before deflation loop).
+# A5: _total_top_ups and _forced_sale_rate must come from the pre-deflation
+# mixed_outside_cash_per_trial_year to avoid double-deflation.
+_nominal_mixed_oc = result["mixed_outside_cash_per_trial_year"]  # nominal at this point
+_callout_total_top_ups = float(np.median(_nominal_mixed_oc.sum(axis=1))) if breakdown_mix > 0.0 else 0.0
+_callout_forced_sale_rate = float(flag_forced_sales(_nominal_mixed_oc, max_top_up).mean()) if breakdown_mix > 0.0 else 0.0
+
 # Deflation to today's dollars
 deflate = display_mode == "today"
 yearly_deflator = (1 + cpi) ** np.arange(1, horizon + 1)
@@ -546,6 +553,28 @@ render_dot_grid(
 _render_html(f"""<div class="pvs-section-sub">Property beats shares in
 {result['p_property_wins']:.0%} of stories, but only {result['p_solvent']:.0%}
 stay within your {_fmt_money(max_top_up)} cash ceiling. "Succeeds" needs both.</div>""")
+
+# Downside callout (mix-aware; suppressed at mix=0 by render_downside_callout itself)
+render_downside_callout(
+    worst_year_cash=result["worst_year_cash"],
+    total_top_ups=_callout_total_top_ups,
+    forced_sale_rate=_callout_forced_sale_rate,
+    max_top_up=max_top_up,
+    breakdown_mix=breakdown_mix,
+    mixed_outside_cash=result["mixed_outside_cash_per_trial_year"],
+    mixed_terminal=result["mixed_terminal_wealth"],
+    s_terminal=base_result["shares_terminal_wealth"],
+    ceiling=max_top_up,
+    deflate=deflate,
+)
+
+with st.expander("What are the failure modes? (2x2 breakdown)"):
+    render_failure_taxonomy(
+        mixed_outside_cash=result["mixed_outside_cash_per_trial_year"],
+        mixed_terminal=result["mixed_terminal_wealth"],
+        s_terminal=base_result["shares_terminal_wealth"],
+        ceiling=max_top_up,
+    )
 
 # Feasibility flag
 wyc = result["worst_year_cash"]

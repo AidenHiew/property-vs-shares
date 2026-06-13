@@ -131,3 +131,53 @@ def test_headline_explainer_present():
     assert "not a forecast" in full_html or "built from your numbers" in full_html, (
         "Headline explainer sentences not found"
     )
+
+
+# ---------------------------------------------------------------------------
+# Task 4 — downside callout
+# ---------------------------------------------------------------------------
+
+def test_downside_callout_present():
+    """Amber downside callout must appear in rendered output."""
+    at = _run_app()
+    assert not at.exception
+    full_html = " ".join(m.value for m in at.markdown)
+    assert "callout-amber" in full_html or "If it goes wrong" in full_html, (
+        "Downside callout not found in rendered output"
+    )
+
+
+def test_downside_callout_mentions_forced_sale():
+    """Callout must mention forced sale in plain language."""
+    at = _run_app()
+    full_html = " ".join(m.value for m in at.markdown)
+    assert "forced to sell" in full_html, (
+        "'forced to sell' language not found in downside callout"
+    )
+
+
+def test_downside_callout_mentions_caveat():
+    """Callout must mention 'excludes' caveat for major repairs / income shocks."""
+    at = _run_app()
+    full_html = " ".join(m.value for m in at.markdown)
+    assert "excludes" in full_html, "Downside caveat ('excludes') not found"
+
+
+def test_downside_callout_mix_aware_at_pure_shares():
+    """At free_mix=0 (pure shares), forced-sale callout should show 0% or be absent."""
+    at = _run_app(persona="Custom", free_mix=0)
+    assert not at.exception
+    # App must not crash; the callout for mix=0 is suppressed (no property cash demand)
+    full_html = " ".join(m.value for m in at.markdown)
+    assert "If it goes wrong" not in full_html or "0%" in full_html, (
+        "Downside callout present at mix=0 but should be suppressed or show 0%"
+    )
+
+
+def test_model_assumption_caveat_near_dial():
+    """Model-assumption caveat (cash-flow model) must appear somewhere in output."""
+    at = _run_app()
+    full_html = " ".join(m.value for m in at.markdown)
+    assert "cash-flow model" in full_html or "excludes" in full_html, (
+        "Model-assumption caveat not found in output"
+    )
