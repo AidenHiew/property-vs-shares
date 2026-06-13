@@ -312,7 +312,12 @@ with st.sidebar:
                 help="New builds keep current rules per the Budget announcement. Tick to model the counterfactual.")
         else:
             override_new_build_carveout = False
-        rental_yield_sigma = 0.0
+        rental_yield_sigma = st.slider(
+            "Rent ups & downs (yearly drift in rental yield)",
+            0.0, 1.5, 0.5, step=0.1, format="±%.1f%%",
+            help="Slow drift in the rent level (on top of vacancy). "
+                 "0 = fixed yield; 0.5pp is the calibrated default.",
+        ) / 100
 
 # ---------------------------------------------------------------------------
 # Input validation
