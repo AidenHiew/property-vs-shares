@@ -191,3 +191,111 @@ def test_render_ab_frontier_no_crash_same_horizon():
                 b_label="B (current)",
                 horizon=25, dial_safety_pct=95,
             )
+
+
+# ---------------------------------------------------------------------------
+# Task 4 — AppTest wiring: differing-horizon fallback + layout toggle
+# ---------------------------------------------------------------------------
+
+def _build_snap_curve(horizon_years: int = 25):
+    """Build a real MixPoint curve for AppTest injection."""
+    from model.monte_carlo import run_monte_carlo
+    from model.mix_curve import build_mix_curve
+    r = run_monte_carlo(
+        trials=200, horizon_years=horizon_years, property_share_mix=1.0,
+        purchase_price=700_000, deposit=140_000, stamp_duty=32_330,
+        buying_costs=2_600, loan_rate_mu=0.06, loan_rate_sigma=0.01,
+        gross_yield=0.04, vacancy_weeks_mu=2.0, vacancy_weeks_sigma=1.0,
+        rental_yield_sigma=0.0, property_growth_mu=0.055, property_growth_sigma=0.11,
+        share_return_mu=0.085, share_return_sigma=0.15, correlation=0.3,
+        management_fee_pct=0.07, maintenance_pct=0.012,
+        property_age="established_post_2017", asset_type="house",
+        depreciation_override=None, portfolio_profile="blended",
+        mode="realistic", margin_loan_rate=0.075, isolate_asset_quality=False,
+        mtr=0.37, cpi=0.025, drp=True, serviceability_ceiling=20_000, seed=42,
+        return_distribution="gaussian", t_df=5,
+        loan_rate_distribution="gaussian", loan_rate_t_df=5,
+        property_regime="restricted_2027", annual_land_tax=0,
+    )
+    return build_mix_curve(
+        p_terminal=r["property_terminal_wealth"],
+        s_terminal=r["shares_terminal_wealth"],
+        p_outside_cash=r["outside_cash_per_trial_year"],
+        ceiling=20_000,
+    )
+
+
+def test_differing_horizon_fallback_shown_in_app():
+    """When A has horizon=10 and current inputs have horizon=25, stacked fallback appears."""
+    from streamlit.testing.v1 import AppTest
+
+    at = AppTest.from_file("app.py", default_timeout=120)
+    at.query_params["yrs"] = "25"
+    at.run()
+    assert not at.exception
+
+    snap_curve = _build_snap_curve(horizon_years=10)
+    at.session_state["_scenario_a"] = {
+        "run_kwargs": {"horizon_years": 10},
+        "max_top_up": 20_000,
+        "display_mode": "nominal",
+        "comparison_mode": "realistic",
+        "horizon": 10,
+        "property_regime": "restricted_2027",
+        "label": "A · restricted_2027 · nominal",
+        "curve": snap_curve,
+        "median_wealth": 900_000.0,
+        "p_solvent_balanced": 0.95,
+    }
+    at.run()
+    assert not at.exception
+    # Different-horizons note must appear in markdown or HTML output
+    all_text = " ".join(m.value for m in at.markdown)
+    assert "Different hold periods" in all_text or "differ" in all_text.lower(), (
+        f"Differing-horizon fallback note not found in markdown. Sample: {all_text[:500]}"
+    )
+
+
+def test_ab_compare_no_url_bleed():
+    """After a fresh app run, no A/B data appears in URL query params."""
+    from streamlit.testing.v1 import AppTest
+    at = AppTest.from_file("app.py", default_timeout=120)
+    at.run()
+    assert not at.exception
+    for key in list(at.query_params.keys()):
+        assert "scenario" not in key.lower(), (
+            f"Scenario data leaked to URL param '{key}'"
+        )
+        assert "snap" not in key.lower(), (
+            f"Snapshot data leaked to URL param '{key}'"
+        )
+
+
+def test_ab_layout_toggle_present_when_snapshot_saved():
+    """When _scenario_a is in session_state with matching horizon, 'Side-by-side' checkbox appears."""
+    from streamlit.testing.v1 import AppTest
+
+    at = AppTest.from_file("app.py", default_timeout=120)
+    at.run()
+    assert not at.exception
+
+    snap_curve = _build_snap_curve(horizon_years=25)
+    at.session_state["_scenario_a"] = {
+        "run_kwargs": {"horizon_years": 25},
+        "max_top_up": 20_000,
+        "display_mode": "nominal",
+        "comparison_mode": "realistic",
+        "horizon": 25,
+        "property_regime": "restricted_2027",
+        "label": "A · restricted_2027 · nominal",
+        "curve": snap_curve,
+        "median_wealth": 900_000.0,
+        "p_solvent_balanced": 0.95,
+    }
+    at.run()
+    assert not at.exception
+    cb_labels = [c.label for c in at.checkbox]
+    assert any(
+        "side-by-side" in (lbl or "").lower() or "tablet" in (lbl or "").lower()
+        for lbl in cb_labels
+    ), (f"Layout toggle checkbox not found. Checkboxes: {cb_labels}")
