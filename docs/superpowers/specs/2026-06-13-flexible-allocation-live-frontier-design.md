@@ -4,7 +4,7 @@
 **Status:** Draft for review — **rev 2** (incorporates a 3-lane adversarial spec review: engineering-feasibility, completeness/ambiguity, finance-domain-correctness)
 **Topic:** Expand the property-vs-shares tool beyond 3 fixed persona options into flexible, live allocation control — and close the trust/downside gaps a design review surfaced.
 
-> **Rev 2 changelog (what the adversarial review changed):** added a mix-aware-downside contract and a model-assumption caveat for the linear blend (it understates intermediate-mix cash stress); made the single-run output mapping explicit (every chart derives post-hoc, no second simulation); pinned the deflation + comparison-mode contract for the curve; replaced the unachievable "300ms timer + ✓ pulse" with a feasible Streamlit mechanism and surfaced the base-run cost; defined `$Y total top-ups` and `forced_sale_rate` precisely; **deferred `rental_yield_sigma`** (not a cheap fix); added new-URL-param guards and downgraded A/B snapshots to session-state-only; resolved the "Compare all mixes" table fate; tightened not-advice language.
+> **Rev 2 changelog (what the adversarial review changed):** added a mix-aware-downside contract and a model-assumption caveat for the linear blend (it understates intermediate-mix cash stress); made the single-run output mapping explicit (every chart derives post-hoc, no second simulation); pinned the deflation + comparison-mode contract for the curve; replaced the unachievable "300ms timer + ✓ pulse" with a feasible Streamlit mechanism and surfaced the base-run cost; defined `$Y total top-ups` and `forced_sale_rate` precisely; **scheduled `rental_yield_sigma` as its own Phase 1b** (correlated-with-vacancy, calibrated — kept out of the byte-identical refactor but no longer dropped); added new-URL-param guards and downgraded A/B snapshots to session-state-only; resolved the "Compare all mixes" table fate; tightened not-advice language.
 
 ---
 
@@ -86,7 +86,7 @@ Same seed for the base run → all mixes share identical return/rate/vacancy dra
 
 ### 3.4 Rigor fixes — scoped
 
-- **`rental_yield_sigma`: DEFERRED (review pushback).** It is plumbed but *unused* (`monte_carlo.py` comment ~line 129; `app.py:305` hard-sets `0.0`). Activating it requires generating/consuming per-year yield draws in the trial loop, deciding correlation with vacancy (else it double-counts income variance), and recalibration — and it would break the byte-identical Phase-1 gate. Keep `0.0` as a **documented simplification**; if pursued later, it is its own task with its own acceptance criteria (e.g. AR(1) persistence ~0.7, σ≈0.5%, total rental-income variance up ≤~30% vs vacancy-only).
+- **`rental_yield_sigma`: now scheduled as Phase 1b** (see §11), *not* deferred. It is currently plumbed but *unused* (`monte_carlo.py` comment ~line 129; `app.py:305` hard-sets `0.0`), so it does nothing today. It matters for this redesign because the new thesis is downside-honesty: with rent able to move only via vacancy, the bad-year cash crunch is understated. It is sequenced **after** the byte-identical refactor (Phase 1) so the regression gate still proves the refactor changed no numbers; Phase 1b then deliberately changes them with its own before/after calibration check. Implementation contract in §11 (correlated-with-vacancy, calibrated — naive independent σ would double-count vacancy and *overstate* swings).
 - **Overflow bucket** (`SHARE_RETURN_FOR_OVERFLOW = 8.5%` constant) — slightly flatters property in bad-share futures; documented, deferred.
 
 ### 3.5 Recompute mechanism + state machine (feasible Streamlit)
@@ -201,7 +201,6 @@ The current code computes these from the **pure-property** array even when a mix
 ## 9. Out of scope (YAGNI)
 
 - **Deeper model** (offset account, 2nd property/portfolio, margin-call mode, capex, mid-period rebalancing) — deferred (review ranked it a trap until UX + model are solid).
-- **`rental_yield_sigma` activation** — deferred (§3.4).
 - **> 2 compare scenarios; A/B URL-sharing.**
 - **"% property ahead by year" line; retiring the terminal-wealth histogram** — later polish.
 - **A precise forced-sale economic model** beyond the ceiling-breach flag.
@@ -215,6 +214,7 @@ Per project rule (`CLAUDE.md`): test malformed/boundary inputs explicitly — "t
 - **Engine equivalence:** `build_mix_curve` at a mix == a full single-mix `run_monte_carlo` for that mix (byte-identical regression; the refactor changes no numbers).
 - **Mix-aware downside:** `worst_year_cash`/`total_top_ups`/`forced_sale_rate` at the selected mix are computed from `mix·p_outside_cash`, not pure property; at mix=0 (pure shares) worst-year cash and forced-sale rate are **0**.
 - **CRN smoothness:** fixed seed → `p_solvent` near-monotonic in mix; suggested mix stable across repeated runs; verify under both `gaussian` and `student_t`.
+- **Rent variance (Phase 1b):** `rental_yield_sigma = 0` → byte-identical to Phase 1; `> 0` → total rental-income variance rises ≤~30% vs vacancy-only (no double-count); the rent-level shock is correlated with vacancy and drawn from a distinct RNG stream (`seed+2`, uncorrelated with return paths).
 - **Deflation contract:** curve built in nominal $; deflation applied per-render; deflated and nominal callouts never mixed; today's-$ paths still correct.
 - **comparison_mode:** curve recomputes on mode switch and is labelled with the active mode.
 - **States:** input-hash change → Recomputing → Fresh; dial/mix moves never recompute; all three cards handle `None`; `try/except` renders the error state.
@@ -225,7 +225,12 @@ Per project rule (`CLAUDE.md`): test malformed/boundary inputs explicitly — "t
 
 ## 11. Phasing
 
-- **Phase 1 — Engine + auto-recompute:** verify/expose unblended arrays (Task 0, incl. perf p95 target) → `build_mix_curve` (mix-aware metrics) → CRN → output mapping (no second run) → remove sweep + `↻` button → input-hash recompute + `st.fragment` + state machine + `try/except`. Tests §10.
+- **Phase 1 — Engine + auto-recompute:** verify/expose unblended arrays (Task 0, incl. perf p95 target) → `build_mix_curve` (mix-aware metrics) → CRN → output mapping (no second run) → remove sweep + `↻` button → input-hash recompute + `st.fragment` + state machine + `try/except`. Tests §10. **Gate: byte-identical single-mix results.**
+- **Phase 1b — Rent-level variance:** lands *after* Phase 1's byte-identical gate, then deliberately changes the numbers. Implementation contract:
+  - Generate a per-year rent-level path and consume it in the property trial loop (today `rental_yield_sigma` is plumbed but the loop ignores it — `gross_yield` is a scalar; this requires patching the loop, not just a config default).
+  - **Correlate the rent-level shock with vacancy** (bad markets bring empty weeks *and* soft rent together) so it doesn't double-count the income variance vacancy already models. Give it a distinct RNG stream (e.g. `seed+2`) so it doesn't correlate with the return paths.
+  - Default shape: AR(1) persistence ≈0.7, annual innovation σ≈0.5% (slow structural rent drift, not i.i.d. white noise). Expose a small UI default; keep it in the Advanced group.
+  - **Acceptance:** total annual rental-income variance rises sensibly vs vacancy-only (target ≤~30% increase, not ~2×); the downside callout's bad-year cash rises modestly, not implausibly; a before/after snapshot documents the deliberate number change (the only place the refactor's "no number change" rule is intentionally broken).
 - **Phase 2 — Flexible UI + trust/downside + a11y:** hierarchy reorder, dot-grid headline + explainer, mix-aware downside callout + caveat + 2×2 taxonomy, cards renamed/de-steered, tradeoff+dial expander (+ table-as-toggle), remove sidebar custom slider, a11y fixes, "suggested" language sweep.
 - **Phase 3 — A/B compare:** session-only snapshot + overlaid/ stacked tradeoff + same-display-mode/regime guards + mobile `st.tabs()`.
 
