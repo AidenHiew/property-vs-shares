@@ -23,6 +23,11 @@ from ui.persona import (find_optimal_mix, render_persona_cards, render_compariso
 from ui.onboarding import render_hero, render_limitations, render_full_guide
 from model.solvency import flag_forced_sales
 from ui.frontier import render_dot_grid, render_downside_callout, render_failure_taxonomy, render_frontier_expander
+from ui.compare import (
+    render_ab_mini_cards, render_ab_frontier,
+    render_ab_stacked_fallback, render_ab_tabs_fallback,
+    _horizons_differ, _display_mode_mismatch,
+)
 
 
 # ============================================================================
@@ -581,6 +586,67 @@ if deflate:
 # RENDER SECTION — spec §4 hierarchy order
 # All computations above are complete; only render calls from here on.
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# A/B Scenario compare section (Phase 3) — shown only when a snapshot is saved.
+# A = saved snapshot (params + pre-computed curve from session_state).
+# B = current live scenario (mix_curve already built above).
+# No URL writes; snapshot is session-only.
+# ---------------------------------------------------------------------------
+_snap = st.session_state.get("_scenario_a")
+if _snap is not None:
+    b_curve = mix_curve  # current scenario's curve (already built above)
+    b_label = f"B (current) · {effective_property_regime} · {display_mode}"
+    a_label = _snap["label"]
+
+    # Guard: display-mode mismatch — warn but still render
+    if _display_mode_mismatch(_snap, display_mode):
+        st.warning(
+            f"Scenario A was saved in **{_snap['display_mode']}** mode; "
+            f"current view is **{display_mode}**. "
+            "The comparison uses each curve's own saved values — switch 'Show dollars as' "
+            "to match for a like-for-like overlay.",
+            icon="⚠️",
+        )
+
+    # Guard: differing horizons → stacked fallback
+    if _horizons_differ(_snap, horizon):
+        render_ab_stacked_fallback(
+            a_curve=_snap["curve"],
+            b_curve=b_curve,
+            a_label=a_label,
+            b_label=b_label,
+            a_horizon=_snap["horizon"],
+            b_horizon=horizon,
+        )
+    else:
+        # Same horizon → overlaid or tabbed view
+        st.markdown(
+            f'<div class="pvs-section">Comparing: {a_label} vs {b_label}</div>',
+            unsafe_allow_html=True,
+        )
+        side_by_side = st.checkbox(
+            "Side-by-side (tablet+)", value=True, key="ab_side_by_side",
+            help="Uncheck on small screens to switch to a tab view (A / B / Compare).",
+        )
+        if side_by_side:
+            render_ab_mini_cards(
+                a_curve=_snap["curve"], b_curve=b_curve,
+                a_label=a_label, b_label=b_label, horizon=horizon,
+            )
+            render_ab_frontier(
+                a_curve=_snap["curve"], b_curve=b_curve,
+                a_label=a_label, b_label=b_label,
+                horizon=horizon, dial_safety_pct=dial_safety_pct,
+            )
+        else:
+            render_ab_tabs_fallback(
+                a_curve=_snap["curve"], b_curve=b_curve,
+                a_label=a_label, b_label=b_label,
+                horizon=horizon, dial_safety_pct=dial_safety_pct,
+            )
+
+    st.markdown("---")
 
 # 1. Example-data nudge
 _render_html("""

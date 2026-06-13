@@ -121,3 +121,73 @@ def test_clear_button_absent_before_save():
     assert not any("Clear" in (lbl or "") and "scenario" in (lbl or "").lower() for lbl in button_labels), (
         f"Premature Clear button: {button_labels}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Task 3 — guard helpers + render smoke tests
+# ---------------------------------------------------------------------------
+
+def test_differing_horizons_detected():
+    """_horizons_differ returns True when A and B have different horizon_years."""
+    from ui.compare import _horizons_differ
+    snap = {"run_kwargs": {"horizon_years": 20}}
+    assert _horizons_differ(snap, current_horizon=25) is True
+    assert _horizons_differ(snap, current_horizon=20) is False
+
+
+def test_display_mode_mismatch_detected():
+    """_display_mode_mismatch returns True when A and B have different display_mode."""
+    from ui.compare import _display_mode_mismatch
+    snap = {"display_mode": "today"}
+    assert _display_mode_mismatch(snap, current_display_mode="nominal") is True
+    assert _display_mode_mismatch(snap, current_display_mode="today") is False
+
+
+def test_render_ab_mini_cards_does_not_crash():
+    """render_ab_mini_cards must not raise with valid MixPoint curves."""
+    from ui.compare import render_ab_mini_cards
+    from model.mix_curve import MixPoint
+    from unittest.mock import patch, MagicMock
+    import streamlit as st
+
+    def _pt(mix, wealth, solvent):
+        return MixPoint(mix_pct=mix, median_mixed_wealth=wealth, p_solvent=solvent,
+                        p_succeeds=0.7, p_mix_beats_pure_shares=0.7,
+                        worst_year_cash=5000, total_top_ups=30000, forced_sale_rate=0.05)
+
+    a_curve = [_pt(m / 10, 900_000 + m * 10_000, 0.97 - m * 0.01) for m in range(11)]
+    b_curve = [_pt(m / 10, 950_000 + m * 10_000, 0.96 - m * 0.01) for m in range(11)]
+
+    with patch.object(st, "columns", return_value=[MagicMock(), MagicMock()]):
+        with patch("ui.compare._render_html"):
+            render_ab_mini_cards(
+                a_curve=a_curve, b_curve=b_curve,
+                a_label="A · current · nominal", b_label="B (current)",
+                horizon=25,
+            )
+    # No exception = pass
+
+
+def test_render_ab_frontier_no_crash_same_horizon():
+    """render_ab_frontier must not raise when horizons match."""
+    from ui.compare import render_ab_frontier
+    from model.mix_curve import MixPoint
+    from unittest.mock import patch, MagicMock
+    import streamlit as st
+
+    def _pt(mix, wealth, solvent):
+        return MixPoint(mix_pct=mix, median_mixed_wealth=wealth, p_solvent=solvent,
+                        p_succeeds=0.7, p_mix_beats_pure_shares=0.7,
+                        worst_year_cash=5000, total_top_ups=30000, forced_sale_rate=0.05)
+
+    a_curve = [_pt(m / 20, 900_000 + m * 5_000, 0.97 - m * 0.005) for m in range(21)]
+    b_curve = [_pt(m / 20, 950_000 + m * 5_000, 0.96 - m * 0.005) for m in range(21)]
+
+    with patch.object(st, "plotly_chart"):
+        with patch("ui.compare._render_html"):
+            render_ab_frontier(
+                a_curve=a_curve, b_curve=b_curve,
+                a_label="A · current · nominal",
+                b_label="B (current)",
+                horizon=25, dial_safety_pct=95,
+            )
