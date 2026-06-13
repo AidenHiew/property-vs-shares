@@ -340,10 +340,10 @@ if errors:
 # Clamp persona to a valid option: a deselected segmented_control sets persona_pick to
 # None, which must never reach the URL (str(None) == "None" is not a valid option and
 # would crash the segmented_control default on the next load).
-VALID_PERSONAS = ("Safe", "Balanced", "Wealth Maximizer", "Custom")
-_persona_qp = st.session_state.get("persona_pick") if "persona_pick" in st.session_state else qp("persona", str, "Balanced")
+VALID_PERSONAS = ("Safe · 99%+", "Balanced · 95%+", "Growth-focused · 85%+", "Custom")
+_persona_qp = st.session_state.get("persona_pick") if "persona_pick" in st.session_state else qp("persona", str, "Balanced · 95%+")
 if _persona_qp not in VALID_PERSONAS:
-    _persona_qp = "Balanced"
+    _persona_qp = "Balanced · 95%+"
 # --- New URL-persisted allocation controls (clamped on read AND write) ---
 # dial_safety: integer percent in [50, 99]; default 95.
 _dial_raw = qp("dial_safety", int, 95)
@@ -405,9 +405,9 @@ def cached_run(**kwargs):
 # ---------------------------------------------------------------------------
 # Recommendation (auto-recompute: one base run + post-hoc mix curve)
 # ---------------------------------------------------------------------------
-st.markdown('<div class="pvs-section">Recommended allocation for you</div>', unsafe_allow_html=True)
-st.markdown('<div class="pvs-section-sub">Pick the safety level that matches your comfort with risk — '
-            'the optimiser finds the property/shares mix that delivers it with the most wealth.</div>',
+st.markdown('<div class="pvs-section">What the model suggests at each safety level</div>', unsafe_allow_html=True)
+st.markdown('<div class="pvs-section-sub">Pick the safety level that matches your comfort — '
+            'the model finds the property/shares mix that delivers it with the most wealth.</div>',
             unsafe_allow_html=True)
 
 # ---------------------------------------------------------------------------
@@ -445,23 +445,30 @@ mix_curve = build_mix_curve(
 
 render_persona_cards(mix_curve, horizon)
 balanced = find_optimal_mix(mix_curve, 0.95)
-PERSONA_TO_THRESHOLD = {"Safe": 0.99, "Balanced": 0.95, "Wealth Maximizer": 0.85}
-options = ["Safe", "Balanced", "Wealth Maximizer", "Custom"]
-label_map = {k: (k + " ★" if k == "Balanced" else k) for k in options}
-_persona_default = qp("persona", str, "Balanced")
-if _persona_default not in options:  # guard stale/invalid URL values (e.g. "None")
-    _persona_default = "Balanced"
+PERSONA_TO_THRESHOLD = {
+    "Safe · 99%+": 0.99,
+    "Balanced · 95%+": 0.95,
+    "Growth-focused · 85%+": 0.85,
+}
+options = ["Safe · 99%+", "Balanced · 95%+", "Growth-focused · 85%+", "Custom"]
+label_map = {k: k for k in options}
+_persona_default = qp("persona", str, "Balanced · 95%+")
+if _persona_default not in options:  # guard stale/invalid URL values (e.g. old names, "None")
+    _persona_default = "Balanced · 95%+"
 picked = st.segmented_control(
     "View breakdown for", options, format_func=lambda k: label_map[k],
     default=_persona_default, key="persona_pick",
 )
 if picked is None:
-    picked = "Balanced"
+    picked = "Balanced · 95%+"
 if picked == "Custom":
     breakdown_mix_pct = property_share_mix_pct
 else:
     _row = find_optimal_mix(mix_curve, PERSONA_TO_THRESHOLD[picked])
-    breakdown_mix_pct = int(round(_row.mix_pct * 100)) if _row else (int(round(balanced.mix_pct * 100)) if balanced else 50)
+    breakdown_mix_pct = int(round(_row.mix_pct * 100)) if _row else (
+        int(round(find_optimal_mix(mix_curve, 0.95).mix_pct * 100))
+        if find_optimal_mix(mix_curve, 0.95) else 50
+    )
 
 # Derive per-render mixed arrays from base_result (no second simulation).
 # All mix-specific arrays are computed post-hoc from the base run's unblended paths.

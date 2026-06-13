@@ -13,15 +13,10 @@ from ui.common import AMBER_DK, GLOBAL_CSS, _render_html, _fmt_money, _fmt_pct
 # ============================================================================
 # Persona definitions
 # ============================================================================
-# NOTE: persona display names, the "★ RECOMMENDED" badge, and the ★-on-Balanced
-# are UNCHANGED in Phase 1 (engine-only). Renaming to "Growth-focused · 85%+",
-# dropping the ★, and the "SUGGESTED" relabel are Phase 2 (spec §4.1, §8) — doing
-# them here would desync app.py's segmented_control / PERSONA_TO_THRESHOLD /
-# VALID_PERSONAS, which still use "Safe"/"Balanced"/"Wealth Maximizer".
 PERSONA_DEFS = [
-    ("Safe Player",      0.99, "I want near-certainty of staying within my cash ceiling — even if it costs some wealth."),
-    ("Balanced",         0.95, "I want very high safety, but I'll accept a small chance of cashflow stress for more wealth."),
-    ("Wealth Maximizer", 0.85, "I'll accept real risk of a forced sale (~1 in 7 futures) in exchange for the highest wealth."),
+    ("Safe · 99%+",           0.99, "I want near-certainty of staying within my cash ceiling — even if it means a lower wealth outcome."),
+    ("Balanced · 95%+",       0.95, "I want very high safety, but I'll accept a small chance of cashflow stress for more wealth."),
+    ("Growth-focused · 85%+", 0.85, "I'll accept real cashflow risk (~1 in 7 stories) in exchange for the highest wealth outcome."),
 ]
 
 
@@ -38,7 +33,7 @@ def find_optimal_mix(curve: list[MixPoint], min_p_solvent: float) -> MixPoint | 
 
 def _persona_card_html(name: str, threshold: float, blurb: str,
                        point: MixPoint | None, is_rec: bool) -> str:
-    badge = '<div class="badge">★ RECOMMENDED</div>' if is_rec else ""
+    badge = '<div class="badge">SUGGESTED</div>' if is_rec else ""
     klass = "card rec" if is_rec else "card"
     if point is None:
         return f"""
@@ -83,27 +78,29 @@ def render_persona_cards(curve: list[MixPoint], horizon: int) -> None:
         mix_int = int(round(row.mix_pct * 100))
         html = f"""
         <div class="cards" style="grid-template-columns:1fr;max-width:560px;margin:0 auto;">
-          <div class="card rec"><div class="badge">★ RECOMMENDED</div>
-            <div class="pname">Optimal allocation</div>
+          <div class="card rec"><div class="badge">SUGGESTED</div>
+            <div class="pname">Suggested allocation</div>
             <div class="alloc">{mix_int}% property</div>
             <div class="alloc-sub">{100 - mix_int}% shares</div>
             <div class="hr"></div>
             <div class="mrow"><div class="mlabel">Typical wealth in {horizon} years</div><div class="mval">{_fmt_money(row.median_mixed_wealth)}</div></div>
             <div class="mrow"><div class="mlabel">Chance you never run out of cash</div><div class="mval">{_fmt_pct(row.p_solvent)}</div></div>
             <div class="hr"></div>
-            <p class="blurb">"All three safety levels (≥99%, ≥95%, ≥85%) point to the same allocation under your
-            current inputs — pick this with confidence."</p>
+            <p class="blurb">"All three safety levels (≥99%, ≥95%, ≥85%) point to the same allocation
+            under your inputs — a reliable starting point."</p>
           </div></div>"""
         _render_html(GLOBAL_CSS + html)
         return
 
     cards = ""
     for name, thr, blurb, point in resolved:
-        is_rec = (name == "Balanced")
+        is_rec = (name == "Balanced · 95%+")
         cards += _persona_card_html(name, thr, blurb, point, is_rec)
     _render_html(
         GLOBAL_CSS
         + f'<div class="cards">{cards}</div>'.replace("{H}", str(horizon))
+        + '<p class="pvs-section-sub" style="margin-top:10px;">'
+          'Unsure? <b>Balanced · 95%+</b> is a common starting point.</p>'
     )
 
 
