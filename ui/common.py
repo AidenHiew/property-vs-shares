@@ -70,6 +70,46 @@ GLOBAL_CSS = f"""
   .tbl .rec {{ background: rgba(22,163,74,.07); font-weight: 700; }}
   .tbl .rec td {{ color: #15803d; }}
 
+  /* dot-grid headline */
+  .dot-grid-block {{ margin: 8px 0 16px; }}
+  .dot-grid {{
+    display: grid;
+    grid-template-columns: repeat(10, 14px);
+    gap: 4px;
+    margin-bottom: 10px;
+  }}
+  .dot {{
+    width: 14px; height: 14px; border-radius: 50%;
+    display: inline-block;
+  }}
+  .dot-headline {{
+    display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+    margin-bottom: 6px;
+  }}
+  .dot-big {{ font-size: 26px; font-weight: 800; color: #16a34a; line-height: 1; }}
+  .dot-ctx {{ font-size: 16px; color: #1a1a1a; font-weight: 600; }}
+  .dot-explainer {{ font-size: 14px; color: #6b7280; margin: 0; max-width: 680px; }}
+
+  /* downside callout */
+  .callout-amber {{
+    background: rgba(245,158,11,.09);
+    border: 1px solid rgba(245,158,11,.5);
+    border-left: 4px solid #d97706;
+    border-radius: 10px;
+    padding: 14px 18px;
+    font-size: 15px;
+    color: #78350f;
+    margin: 12px 0 10px;
+    line-height: 1.55;
+  }}
+  .callout-amber .caveat {{
+    display: block;
+    font-size: 13px;
+    color: #92400e;
+    margin-top: 8px;
+    font-style: italic;
+  }}
+
   .disclaimer {{ font-size: 12px; color: {MUTED}; border-top: 1px solid {LINE};
                  margin-top: 28px; padding-top: 14px; line-height: 1.6; }}
 

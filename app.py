@@ -22,6 +22,7 @@ from model.mix_curve import build_mix_curve
 from ui.persona import (find_optimal_mix, render_persona_cards, render_comparison_table)
 from ui.onboarding import render_hero, render_limitations, render_full_guide
 from model.solvency import flag_forced_sales
+from ui.frontier import render_dot_grid, render_downside_callout, render_failure_taxonomy
 
 
 # ============================================================================
@@ -537,12 +538,14 @@ st.markdown("---")
 # Headline + feasibility + tiles
 # ---------------------------------------------------------------------------
 n = result["property_terminal_wealth"].size
-_render_html(f"""
-<div class="headline"><span class="big">{result['p_property_succeeds']:.0%}</span>
-<span class="ctx">of {n:,} simulated {horizon}-year futures, property both beats shares <i>and</i> keeps you solvent.</span></div>
-<div class="pvs-section-sub">Property beats shares in {result['p_property_wins']:.0%} of futures, but only
-{result['p_solvent']:.0%} stay within your {_fmt_money(max_top_up)} cash ceiling. "Succeeds" needs both.</div>
-""")
+render_dot_grid(
+    p_succeeds=result["p_property_succeeds"],
+    n_trials=int(n),
+    horizon=horizon,
+)
+_render_html(f"""<div class="pvs-section-sub">Property beats shares in
+{result['p_property_wins']:.0%} of stories, but only {result['p_solvent']:.0%}
+stay within your {_fmt_money(max_top_up)} cash ceiling. "Succeeds" needs both.</div>""")
 
 # Feasibility flag
 wyc = result["worst_year_cash"]

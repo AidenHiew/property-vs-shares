@@ -101,3 +101,33 @@ def test_micro_label_font_size_at_least_14px():
         assert int(size_match.group(1)) >= 14, (
             f"{cls} font-size is {size_match.group(1)}px; must be ≥14px"
         )
+
+
+# ---------------------------------------------------------------------------
+# Task 3 — dot-grid headline
+# ---------------------------------------------------------------------------
+
+def test_dot_grid_present_in_rendered_html():
+    """The dot-grid class must appear in the rendered HTML after Phase 2 Task 3."""
+    at = _run_app()
+    assert not at.exception
+    full_html = " ".join(m.value for m in at.markdown)
+    assert "dot-grid" in full_html, "dot-grid class not found in rendered output"
+
+
+def test_dot_grid_natural_frequency_phrasing():
+    """Natural-frequency phrasing 'in 10' or 'in 100' must appear in the headline area."""
+    at = _run_app()
+    full_html = " ".join(m.value for m in at.markdown)
+    assert "in 10" in full_html or "in 100" in full_html, (
+        "Natural frequency phrasing not found in headline"
+    )
+
+
+def test_headline_explainer_present():
+    """Two-sentence inline explainer must mention 'not a forecast' or 'built from'."""
+    at = _run_app()
+    full_html = " ".join(m.value for m in at.markdown)
+    assert "not a forecast" in full_html or "built from your numbers" in full_html, (
+        "Headline explainer sentences not found"
+    )
