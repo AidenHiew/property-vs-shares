@@ -4,6 +4,8 @@ import pytest
 from ui.verdict import (
     VerdictNumbers, compute_verdict, _badge_state, _crossover_year,
     _loudness, _cross_tab_j,
+    render_trust_line, render_cards, render_win_line,
+    render_affordability, render_fairfight_spoiler,
 )
 
 
@@ -119,3 +121,66 @@ def test_compute_verdict_basic_property_lead():
     assert v.crossover_k == 3
     assert v.fairfight_shares_win is True
     assert v.loudness == "quiet"
+
+
+# ---------------------------------------------------------------------------
+# render functions
+# ---------------------------------------------------------------------------
+def _sample_verdict(**over):
+    base = dict(
+        p_median=1_800_000., s_median=1_200_000.,
+        p_p10=900_000., p_p90=3_200_000., s_p10=700_000., s_p90=2_100_000.,
+        win_rate=68, leader="property", badge_state="badge",
+        badge_label="Ahead in most futures", close_note=False,
+        upfront_x=230_000., typical_t=85_000., crossover_k=7,
+        worst_z=24_000., worst_max=140_000., cross_tab_j=18,
+        loudness="amber", fairfight_y=3_090_000., fairfight_shares_win=True,
+    )
+    base.update(over)
+    return VerdictNumbers(**base)
+
+
+def test_win_line_always_has_funding_clause():
+    html = render_win_line(_sample_verdict())
+    assert "assuming you fund it" in html.lower()
+    assert "68" in html
+
+
+def test_cards_show_verdict_link_clause():
+    html = render_cards(_sample_verdict())
+    assert "fund every shortfall" in html.lower()
+    assert "what you'd cough up" in html.lower()
+
+
+def test_cards_neutral_state_has_no_badge_label():
+    html = render_cards(_sample_verdict(badge_state="neutral", leader="tie", badge_label=""))
+    assert "Ahead in most futures" not in html
+    assert "too close to call" in html.lower()
+
+
+def test_cards_close_note_when_set():
+    html = render_cards(_sample_verdict(badge_state="neutral", leader="tie",
+                                        badge_label="", close_note=True))
+    assert "typically richer" in html.lower()
+
+
+def test_affordability_shows_crossover_year_when_present():
+    html = render_affordability(_sample_verdict(crossover_k=7), horizon=20, ceiling=20_000)
+    assert "year 7" in html.lower()
+    assert "18" in html  # cross-tab J
+
+
+def test_affordability_never_crosses_branch():
+    html = render_affordability(_sample_verdict(crossover_k=None), horizon=20, ceiling=20_000)
+    assert "doesn't fully cover its own costs" in html.lower()
+
+
+def test_win_line_shares_leader_uses_complement():
+    html = render_win_line(_sample_verdict(win_rate=30, leader="shares"))
+    assert "shares come out ahead" in html.lower()
+    assert "70" in html
+
+
+def test_fairfight_spoiler_states_no_margin_call():
+    html = render_fairfight_spoiler(_sample_verdict(fairfight_shares_win=True), leverage_l=760_000)
+    assert "margin-call" in html.lower() or "margin call" in html.lower()
