@@ -21,6 +21,7 @@ from ui.common import (GREEN, TEAL, AMBER, RED, AMBER_DK, INK, MUTED, FAINT, LIN
 from model.mix_curve import build_mix_curve
 from ui.persona import find_optimal_mix, render_persona_cards
 from ui.onboarding import render_hero, render_limitations, render_full_guide
+from ui.export import build_excel, build_pdf
 from model.solvency import flag_forced_sales
 from ui.frontier import render_dot_grid, render_downside_callout, render_failure_taxonomy, render_frontier_expander
 from ui.compare import (
@@ -510,7 +511,16 @@ PERSONA_TO_THRESHOLD = {
     "Growth-focused · 85%+": 0.85,
 }
 options = ["Safe · 99%+", "Balanced · 95%+", "Growth-focused · 85%+", "Custom"]
-label_map = {k: k for k in options}
+# Display labels carry the unit ("% safe") so the toggle can't be misread as a
+# property allocation %. The keys in `options` are unchanged — URL persistence,
+# PERSONA_TO_THRESHOLD, and tests all key off the original strings; only the text
+# shown on the button differs (via format_func at the segmented_control call).
+label_map = {
+    "Safe · 99%+": "Safe · 99% safe",
+    "Balanced · 95%+": "Balanced · 95% safe",
+    "Growth-focused · 85%+": "Growth · 85% safe",
+    "Custom": "Custom",
+}
 _persona_default = qp("persona", str, "Balanced · 95%+")
 if _persona_default not in options:  # guard stale/invalid URL values (e.g. old names, "None")
     _persona_default = "Balanced · 95%+"
@@ -874,15 +884,27 @@ with st.expander("🏛 Setup & tax rules used"):
 # ---------------------------------------------------------------------------
 # Save scenario + disclaimer
 # ---------------------------------------------------------------------------
-scenario = json.dumps({
-    "purchase_price": purchase_price, "deposit_pct": deposit_pct, "gross_yield_pct": gross_yield * 100,
-    "income": income, "mtr": mtr, "loan_rate_pct": loan_rate * 100, "horizon": horizon,
-    "max_top_up": max_top_up, "property_share_mix_pct": property_share_mix_pct,
+# Export the scenario as a spreadsheet (poke the numbers) or a PDF (read/share).
+# Both mirror the on-screen year-by-year tables + headline metrics exactly.
+_export_meta = {
+    "purchase_price": purchase_price, "deposit_pct": deposit_pct,
+    "gross_yield_pct": gross_yield * 100, "income": income, "mtr": mtr,
+    "loan_rate_pct": loan_rate * 100, "horizon": horizon, "max_top_up": max_top_up,
+    "property_share_mix_pct": property_share_mix_pct,
     "portfolio_profile": portfolio_profile, "property_regime": property_regime,
-}, indent=2)
-st.download_button("⬇ Save this scenario (JSON)", scenario, file_name="property-vs-shares-scenario.json",
-                   mime="application/json")
-st.caption("Tip: this page's web address (URL) now holds your scenario — bookmark or copy it to come back or share.")
+    "state": state, "worst_year_cash": float(wyc),
+}
+_xlsx = build_excel(result, _export_meta, horizon, breakdown_mix_pct, deflate, yearly_deflator)
+_pdf = build_pdf(result, _export_meta, horizon, breakdown_mix_pct, deflate, yearly_deflator)
+_dl_a, _dl_b = st.columns(2)
+with _dl_a:
+    st.download_button("⬇ Download as Excel (.xlsx)", _xlsx,
+                       file_name="property-vs-shares.xlsx",
+                       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+with _dl_b:
+    st.download_button("⬇ Download as PDF", _pdf,
+                       file_name="property-vs-shares.pdf", mime="application/pdf")
+st.caption("Tip: this page's web address (URL) also holds your scenario — bookmark or copy it to come back or share.")
 
 _render_html("""
 <div class="disclaimer"><b>Not financial advice.</b> This is a scenario explorer for personal use, not a prediction
