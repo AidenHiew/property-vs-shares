@@ -11,3 +11,4 @@ notebooks/*.html
 notebooks/*.png
 .streamlit/secrets.toml
 .superpowers/
+.claude/
